@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --------------------------------------------------
+// 1. PROBLEM
+// Represents a curated LLD design challenge.
+// --------------------------------------------------
+model Problem {
+  id               String    @id @default(uuid())
+  slug             String    @unique
+  title            String
+  description      String
+  problemStatement String    @map("problem_statement")
+  requirements     String[]
+  constraints      String[]
+  difficulty       String    @default("MEDIUM")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  attempts         Attempt[]
+
+  @@map("problems")
+}
+
+// --------------------------------------------------
+// 2. ATTEMPT
+// Represents one learner session/attempt on a problem.
+// Multiple attempts on the same problem preserve history.
+// --------------------------------------------------
+model Attempt {
+  id          String      @id @default(uuid())
+  problemId   String      @map("problem_id")
+  status      String      @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+  startedAt   DateTime    @default(now()) @map("started_at")
+  completedAt DateTime?   @map("completed_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  problem     Problem     @relation(fields: [problemId], references: [id], onDelete: Restrict)
+  submission  Submission?
+
+  @@index([problemId])
+  @@map("attempts")
+}
+
+// --------------------------------------------------
+// 3. SUBMISSION
+// Represents the learner's submitted design artifact.
+// Tied 1:1 to an Attempt. Immutable once submitted.
+// --------------------------------------------------
+model Submission {
+  id          String      @id @default(uuid())
+  attemptId   String      @unique @map("attempt_id")
+  type        String      @default("TEXT") // TEXT (Change Test A: future DIAGRAM, CODE)
+  content     String      // The submitted text-based LLD design
+  submittedAt DateTime    @default(now()) @map("submitted_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  attempt     Attempt     @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  evaluation  Evaluation?
+
+  @@index([attemptId])
+  @@map("submissions")
+}
+
+// --------------------------------------------------
+// 4. EVALUATION
+// Represents the evaluation process and outcome.
+// Tied 1:1 to a Submission via UNIQUE constraint.
+// --------------------------------------------------
+model Evaluation {
+  id            String     @id @default(uuid())
+  submissionId  String     @unique @map("submission_id") // Strict 1:1 prevents duplicate evaluations
+  evaluatorType String     @default("LLM") @map("evaluator_type") // LLM (Change Test B: RULE_BASED, HUMAN)
+  status        String     @default("PENDING") // PENDING, EVALUATING, COMPLETED, FAILED
+  totalScore    Int?       @map("total_score")
+  maxScore      Int        @default(100) @map("max_score")
+  errorMessage  String?    @map("error_message")
+  startedAt     DateTime   @default(now()) @map("started_at")
+  completedAt   DateTime?  @map("completed_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  submission    Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  feedback      Feedback[]
+
+  @@map("evaluations")
+}
+
+// --------------------------------------------------
+// 5. FEEDBACK
+// Represents per-criterion structured feedback.
+// --------------------------------------------------
+model Feedback {
+  id              String           @id @default(uuid())
+  evaluationId    String           @map("evaluation_id")
+  criterionId     String?          @map("criterion_id")
+  criterionName   String           @map("criterion_name") // Denormalized for historical consistency
+  score           Int
+  maxScore        Int              @map("max_score")
+  evidence        String           // Quotes/references from learner's design
+  concern         String?          // Weaknesses, risks, anti-patterns identified
+  suggestion      String?          // Concrete, actionable improvement advice
+  confidence      Float?           // Evaluator confidence (0.0 - 1.0)
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  evaluation      Evaluation       @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  rubricCriterion RubricCriterion? @relation(fields: [criterionId], references: [id], onDelete: SetNull)
+
+  @@index([evaluationId])
+  @@index([criterionId])
+  @@map("feedback")
+}
+
+// --------------------------------------------------
+// 6. RUBRIC
+// Represents a reusable evaluation rubric specification.
+// --------------------------------------------------
+model Rubric {
+  id          String            @id @default(uuid())
+  name        String            @unique
+  description String
+  isDefault   Boolean           @default(false) @map("is_default")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  criteria    RubricCriterion[]
+
+  @@map("rubrics")
+}
+
+// --------------------------------------------------
+// 7. RUBRIC CRITERION
+// Represents an individual dimension with weight in a rubric.
+// --------------------------------------------------
+model RubricCriterion {
+  id          String     @id @default(uuid())
+  rubricId    String     @map("rubric_id")
+  name        String
+  description String
+  maxScore    Int        @map("max_score")
+  orderIndex  Int        @map("order_index")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  rubric      Rubric     @relation(fields: [rubricId], references: [id], onDelete: Cascade)
+  feedbacks   Feedback[]
+
+  @@unique([rubricId, name])
+  @@index([rubricId])
+  @@map("rubric_criteria")
+}
