@@ -52,8 +52,8 @@ export class EvaluationService {
    * Uses an atomic conditional update at the database level to prevent concurrent execution races.
    */
   async startEvaluation(evaluationId: string) {
-    // Atomic state claim: only update if status is PENDING or FAILED.
-    // Row-level lock in PostgreSQL prevents two simultaneous requests from claiming the evaluation.
+    // Atomic state claim: The conditional UPDATE only succeeds when the current state is PENDING or FAILED.
+    // PostgreSQL serializes concurrent updates to the same row, so only one request can successfully claim the transition.
     const updateResult = await prisma.evaluation.updateMany({
       where: {
         id: evaluationId,
@@ -274,9 +274,9 @@ export class EvaluationService {
     },
     evaluator: Evaluator
   ) {
-    const rubric = await rubricService.getDefaultRubric();
-
     try {
+      const rubric = await rubricService.getDefaultRubric();
+
       const evaluationResult = await evaluator.evaluate({
         problem: {
           title: submission.attempt.problem.title,

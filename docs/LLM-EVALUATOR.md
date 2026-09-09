@@ -14,7 +14,7 @@ Evaluator Interface
 LLMEvaluator
         ├── PromptBuilder (Structured, anti-hallucination prompt generator)
         ├── LLMProvider Interface (Network abstraction & timeout management)
-        │     ├── GeminiProvider (Google Gemini API: gemini-3.6-flash)
+        │     ├── GeminiProvider (Google Gemini API: configurable via GEMINI_MODEL, default: gemini-1.5-flash)
         │     ├── OpenAIProvider (OpenAI Chat Completions API)
         │     └── MockLLMProvider (Deterministic offline testing mock)
         └── OutputValidator (Zod schema + rubric boundary assertions)
@@ -47,7 +47,7 @@ export interface LLMProvider {
   generateStructuredResponse(prompt: PromptPayload, options?: ProviderOptions): Promise<string>;
 }
 ```
-- **`GeminiProvider`**: Connects to Google Gemini API (`generateContent`) using native HTTP `fetch` and structured `responseMimeType: "application/json"`. Configured by default to `gemini-3.6-flash`.
+- **`GeminiProvider`**: Connects to Google Gemini API (`generateContent`) using native HTTP `fetch` and structured `responseMimeType: "application/json"`. Configurable via `GEMINI_MODEL` (defaults to `gemini-1.5-flash`).
 - **`OpenAIProvider`**: Connects to OpenAI Chat Completions API using `response_format: { type: "json_object" }`.
 - **`MockLLMProvider`**: Provides programmable responses, timeout simulations, and failure injections for automated testing without consuming external tokens or requiring internet access.
 
@@ -151,7 +151,7 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/lld_practice?schema=
 # Primary Provider: Google Gemini
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-3.6-flash
+GEMINI_MODEL=gemini-1.5-flash
 
 # Alternative Provider: OpenAI
 # LLM_PROVIDER=openai

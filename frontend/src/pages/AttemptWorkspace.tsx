@@ -166,7 +166,7 @@ export const AttemptWorkspace: React.FC = () => {
             onClick={handleSubmit}
             disabled={submitting || charCount < 20}
           >
-            {submitting ? 'Submitting & Evaluating...' : 'Submit Design for Evaluation \u2192'}
+            {submitting ? 'Submitting...' : 'Submit Design for Evaluation \u2192'}
           </button>
         </div>
       </header>
@@ -293,7 +293,7 @@ export const AttemptWorkspace: React.FC = () => {
               onClick={handleSubmit}
               disabled={submitting || charCount < 20}
             >
-              {submitting ? 'Submitting & Evaluating...' : 'Submit Design \u2192'}
+              {submitting ? 'Submitting...' : 'Submit Design \u2192'}
             </button>
           </div>
         </main>
