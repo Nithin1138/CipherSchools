@@ -173,6 +173,11 @@ export class EvaluationService {
       });
     }
 
+    // Ensure total score cannot mathematically exceed maximum allowable score
+    if (calculatedMaxScore > 0 && calculatedTotalScore > calculatedMaxScore) {
+      calculatedTotalScore = calculatedMaxScore;
+    }
+
     // Atomically persist feedback items and complete evaluation
     return prisma.$transaction(async (tx) => {
       // Clear previous feedback if any existed (e.g. from earlier attempt)
