@@ -131,6 +131,7 @@ export class EvaluationService {
 
     // Validate scoring and calculate deterministic total
     let calculatedTotalScore = 0;
+    let calculatedMaxScore = 0;
     const feedbackPayloads: {
       evaluationId: string;
       criterionId: string | null;
@@ -157,6 +158,7 @@ export class EvaluationService {
       }
 
       calculatedTotalScore += res.score;
+      calculatedMaxScore += res.maxScore;
 
       feedbackPayloads.push({
         evaluationId,
@@ -187,7 +189,7 @@ export class EvaluationService {
         data: {
           status: EvaluationStatus.COMPLETED,
           totalScore: calculatedTotalScore,
-          maxScore: 100,
+          maxScore: calculatedMaxScore || 100,
           completedAt: new Date(),
           errorMessage: null,
         },
@@ -254,7 +256,9 @@ export class EvaluationService {
 
     // Transition or create Evaluation record
     if (evaluation) {
-      evaluation = await this.startEvaluation(evaluation.id);
+      if (evaluation.status !== EvaluationStatus.EVALUATING) {
+        evaluation = await this.startEvaluation(evaluation.id);
+      }
     } else {
       const created = await this.createEvaluation(submissionId);
       evaluation = await this.startEvaluation(created.id);

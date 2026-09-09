@@ -1,102 +1,69 @@
-import type { Problem, Rubric, Attempt, Submission, Evaluation, AttemptHistoryItem } from '../types/index.js';
+/**
+ * Base HTTP client for REST API communication.
+ * Standardizes request configuration, JSON headers, and error parsing.
+ */
 
-const API_BASE = '/api';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api';
 
-async function handleResponse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let errorMsg = `HTTP Error ${res.status}`;
-    try {
-      const body = await res.json();
-      if (body.error) {
-        errorMsg = typeof body.error === 'string' ? body.error : body.error.message || errorMsg;
-      }
-    } catch {
-      // ignore
-    }
-    throw new Error(errorMsg);
+export class ApiError extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(status: number, message: string, code: string = 'API_ERROR') {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
   }
-  return res.json();
 }
 
-export const api = {
-  // Health
-  getHealth: async (): Promise<{ status: string }> => {
-    const res = await fetch(`${API_BASE}/health`);
-    return handleResponse<{ status: string }>(res);
-  },
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...options.headers,
+  };
 
-  // Problems
-  getProblems: async (): Promise<Problem[]> => {
-    const res = await fetch(`${API_BASE}/problems`);
-    const data = await handleResponse<{ problems: Problem[] }>(res);
-    return data.problems;
-  },
-
-  getProblem: async (idOrSlug: string): Promise<Problem> => {
-    const res = await fetch(`${API_BASE}/problems/${idOrSlug}`);
-    const data = await handleResponse<{ problem: Problem }>(res);
-    return data.problem;
-  },
-
-  getProblemAttempts: async (problemId: string): Promise<AttemptHistoryItem[]> => {
-    const res = await fetch(`${API_BASE}/problems/${problemId}/attempts`);
-    const data = await handleResponse<{ attempts: AttemptHistoryItem[] }>(res);
-    return data.attempts;
-  },
-
-  // Rubric
-  getDefaultRubric: async (): Promise<Rubric> => {
-    const res = await fetch(`${API_BASE}/rubric`);
-    const data = await handleResponse<{ rubric: Rubric }>(res);
-    return data.rubric;
-  },
-
-  // Attempts
-  createAttempt: async (problemId: string): Promise<Attempt> => {
-    const res = await fetch(`${API_BASE}/attempts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ problemId }),
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
     });
-    const data = await handleResponse<{ attempt: Attempt }>(res);
-    return data.attempt;
-  },
+  } catch {
+    throw new ApiError(
+      0,
+      'Unable to connect to the backend server. Please verify the API server is running.',
+      'NETWORK_ERROR'
+    );
+  }
 
-  getAttempt: async (attemptId: string): Promise<Attempt> => {
-    const res = await fetch(`${API_BASE}/attempts/${attemptId}`);
-    const data = await handleResponse<{ attempt: Attempt }>(res);
-    return data.attempt;
-  },
+  if (!response.ok) {
+    let errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
+    let errorCode = 'HTTP_ERROR';
 
-  // Submissions
-  createSubmission: async (attemptId: string, content: string): Promise<Submission> => {
-    const res = await fetch(`${API_BASE}/submissions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ attemptId, content, type: 'TEXT' }),
-    });
-    const data = await handleResponse<{ submission: Submission }>(res);
-    return data.submission;
-  },
+    try {
+      const data = await response.json();
+      if (data.error) {
+        if (typeof data.error === 'string') {
+          errorMessage = data.error;
+        } else {
+          errorMessage = data.error.message || errorMessage;
+          errorCode = data.error.code || errorCode;
+        }
+      }
+    } catch {
+      // response is not JSON
+    }
 
-  getSubmission: async (submissionId: string): Promise<Submission> => {
-    const res = await fetch(`${API_BASE}/submissions/${submissionId}`);
-    const data = await handleResponse<{ submission: Submission }>(res);
-    return data.submission;
-  },
+    throw new ApiError(response.status, errorMessage, errorCode);
+  }
 
-  // Evaluation
-  triggerEvaluation: async (submissionId: string): Promise<Evaluation> => {
-    const res = await fetch(`${API_BASE}/submissions/${submissionId}/evaluate`, {
-      method: 'POST',
-    });
-    const data = await handleResponse<{ evaluation: Evaluation }>(res);
-    return data.evaluation;
-  },
+  // Handle 204 No Content
+  if (response.status === 204) {
+    return {} as T;
+  }
 
-  getEvaluation: async (submissionId: string): Promise<Evaluation> => {
-    const res = await fetch(`${API_BASE}/evaluations/${submissionId}`);
-    const data = await handleResponse<{ evaluation: Evaluation }>(res);
-    return data.evaluation;
-  },
-};
+  return response.json();
+}
