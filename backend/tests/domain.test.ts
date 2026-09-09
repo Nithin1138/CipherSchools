@@ -261,18 +261,18 @@ describe('LLD Practice Platform - Domain & Service Behavior', () => {
       // 4. Cannot restart an already EVALUATING evaluation
       await expect(evaluationService.startEvaluation(pendingEval.id)).rejects.toThrow(/already EVALUATING/i);
 
-      // 5. Complete with valid scores
+      // 5. Complete with valid canonical scores
       const completedEval = await evaluationService.completeEvaluation(pendingEval.id, {
         evaluatorType: EvaluatorType.LLM,
         evaluatorModel: 'test-evaluator',
         criterionResults: [
-          { criterionName: 'Entity Modeling & Architecture', score: 20, maxScore: 20, evidence: 'Well modeled.' },
-          { criterionName: 'Design Patterns & Principles', score: 15, maxScore: 15, evidence: 'Solid patterns.' },
-          { criterionName: 'Data Flow & Interface Design', score: 15, maxScore: 15, evidence: 'Clean interfaces.' },
-          { criterionName: 'Edge Cases & Concurrency', score: 10, maxScore: 15, evidence: 'Handled race conditions.' },
-          { criterionName: 'Extensibility & Modularity', score: 10, maxScore: 15, evidence: 'Open-closed principle.' },
-          { criterionName: 'Trade-offs & Rationale', score: 10, maxScore: 10, evidence: 'Clear reasoning.' },
-          { criterionName: 'Clarity & Organization', score: 10, maxScore: 10, evidence: 'Structured sections.' },
+          { criterionName: 'Requirement Understanding', score: 15, maxScore: 15, evidence: 'Identified all requirements.' },
+          { criterionName: 'Class Responsibilities', score: 18, maxScore: 20, evidence: 'Well modeled.' },
+          { criterionName: 'Encapsulation & Interfaces', score: 14, maxScore: 15, evidence: 'Clean interfaces.' },
+          { criterionName: 'Coupling & Cohesion', score: 13, maxScore: 15, evidence: 'Loose coupling.' },
+          { criterionName: 'Abstraction / Design Patterns', score: 9, maxScore: 10, evidence: 'Solid patterns.' },
+          { criterionName: 'Extensibility', score: 12, maxScore: 15, evidence: 'Open-closed principle.' },
+          { criterionName: 'Edge Cases & Testability', score: 9, maxScore: 10, evidence: 'Handled race conditions.' },
         ],
       });
 
@@ -284,6 +284,39 @@ describe('LLD Practice Platform - Domain & Service Behavior', () => {
 
       // 7. Cannot retry a COMPLETED evaluation
       await expect(evaluationService.retryEvaluation(pendingEval.id)).rejects.toThrow(/Only FAILED evaluations can be retried/i);
+
+      // 8. Cannot complete evaluation with incomplete or unknown criteria
+      const attemptX = await attemptService.createAttempt(testProblemId);
+      const subX = await submissionService.createSubmission(attemptX.id, 'Validation test submission content for rubric check.');
+      const evalX = await evaluationService.createEvaluation(subX.id);
+      await evaluationService.startEvaluation(evalX.id);
+
+      // Incomplete criteria (only 2 criteria provided)
+      await expect(
+        evaluationService.completeEvaluation(evalX.id, {
+          evaluatorType: EvaluatorType.LLM,
+          evaluatorModel: 'test',
+          criterionResults: [
+            { criterionName: 'Requirement Understanding', score: 10, maxScore: 15, evidence: 'Ok' },
+            { criterionName: 'Class Responsibilities', score: 15, maxScore: 20, evidence: 'Ok' },
+          ],
+        })
+      ).rejects.toThrow(/Incomplete evaluation: Missing canonical criterion/i);
+
+      // Unknown criterion provided
+      await expect(
+        evaluationService.completeEvaluation(evalX.id, {
+          evaluatorType: EvaluatorType.LLM,
+          evaluatorModel: 'test',
+          criterionResults: [
+            { criterionName: 'Fictitious Criterion', score: 10, maxScore: 15, evidence: 'Fake' },
+          ],
+        })
+      ).rejects.toThrow(/Unknown criterion/i);
+
+      await prisma.evaluation.delete({ where: { id: evalX.id } });
+      await prisma.submission.delete({ where: { id: subX.id } });
+      await prisma.attempt.delete({ where: { id: attemptX.id } });
 
       // Clean up
       await prisma.feedback.deleteMany({ where: { evaluationId: completedEval.id } });

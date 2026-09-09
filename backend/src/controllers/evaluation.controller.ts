@@ -44,11 +44,8 @@ export class EvaluationController {
         throw new AppError(400, 'Evaluation identifier is required');
       }
 
-      // Retry transitions FAILED -> EVALUATING in-place
-      const retryingEval = await evaluationService.retryEvaluation(evaluationId);
-
-      // Re-evaluate using submission ID
-      const evaluation = await evaluationService.evaluateSubmission(retryingEval.submissionId);
+      // Retry transitions FAILED -> EVALUATING in-place and executes evaluator to COMPLETED
+      const evaluation = await evaluationService.retryEvaluation(evaluationId);
       res.status(200).json({ evaluation });
     } catch (err) {
       next(err);

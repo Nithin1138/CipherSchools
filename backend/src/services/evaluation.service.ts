@@ -123,8 +123,9 @@ export class EvaluationService {
    * 4. Completes evaluation atomically: persists structured feedback and marks COMPLETED.
    * Enforces:
    * - Must be in EVALUATING state
-   * - Rubric is authoritative source of truth for criteria and max scores
-   * - Scoring bounds validation (0 <= score <= authoritativeMaxScore)
+   * - Canonical database rubric is mandatory (no fallback to untrusted maxScore)
+   * - Submitted evaluation must evaluate ALL canonical criteria and only canonical criteria
+   * - Scoring bounds validation (0 <= score <= canonical.maxScore)
    * - Deterministic score summing
    */
   async completeEvaluation(evaluationId: string, result: EvaluationResult) {
@@ -144,23 +145,22 @@ export class EvaluationService {
       throw new AppError(400, 'Invalid evaluation result: Criteria feedback results are required.');
     }
 
-    // Resolve authoritative rubric criteria from database
-    let rubricCriteriaMap = new Map<string, { id: string; name: string; maxScore: number }>();
-    let rubricByNameMap = new Map<string, { id: string; name: string; maxScore: number }>();
-    try {
-      const rubric = await rubricService.getDefaultRubric();
-      rubricCriteriaMap = new Map(rubric.criteria.map((c) => [c.id, c]));
-      rubricByNameMap = new Map(rubric.criteria.map((c) => [c.name.toLowerCase().trim(), c]));
-    } catch {
-      // Fallback for isolated unit tests where default rubric might not be seeded
+    // Resolve authoritative rubric criteria from database (mandatory)
+    const rubric = await rubricService.getDefaultRubric();
+    if (!rubric || !rubric.criteria || rubric.criteria.length === 0) {
+      throw new AppError(500, 'Authoritative default evaluation rubric is not configured in the database.');
     }
+
+    const rubricCriteriaMap = new Map(rubric.criteria.map((c) => [c.id, c]));
+    const rubricByNameMap = new Map(rubric.criteria.map((c) => [c.name.toLowerCase().trim(), c]));
+    const seenCanonicalIds = new Set<string>();
 
     // Validate scoring against authoritative rubric and calculate deterministic total
     let calculatedTotalScore = 0;
     let calculatedMaxScore = 0;
     const feedbackPayloads: {
       evaluationId: string;
-      criterionId: string | null;
+      criterionId: string;
       criterionName: string;
       score: number;
       maxScore: number;
@@ -174,36 +174,48 @@ export class EvaluationService {
       const canonicalCriterion = (res.criterionId && rubricCriteriaMap.get(res.criterionId)) ||
                                   rubricByNameMap.get(res.criterionName.toLowerCase().trim());
       
-      const authoritativeMaxScore = canonicalCriterion ? canonicalCriterion.maxScore : res.maxScore;
-      const criterionId = canonicalCriterion ? canonicalCriterion.id : (res.criterionId || null);
-      const criterionName = canonicalCriterion ? canonicalCriterion.name : res.criterionName;
+      if (!canonicalCriterion) {
+        throw new AppError(400, `Unknown criterion '${res.criterionName}'. It does not exist in the canonical rubric.`);
+      }
+
+      if (seenCanonicalIds.has(canonicalCriterion.id)) {
+        throw new AppError(400, `Duplicate criterion '${canonicalCriterion.name}' in evaluation result.`);
+      }
+      seenCanonicalIds.add(canonicalCriterion.id);
 
       if (typeof res.score !== 'number' || isNaN(res.score)) {
-        throw new AppError(400, `Invalid score for criterion '${res.criterionName}': must be a valid number.`);
+        throw new AppError(400, `Invalid score for criterion '${canonicalCriterion.name}': must be a valid number.`);
       }
 
       if (res.score < 0) {
-        throw new AppError(400, `Invalid score for criterion '${res.criterionName}': score cannot be negative.`);
+        throw new AppError(400, `Invalid score for criterion '${canonicalCriterion.name}': score cannot be negative.`);
       }
 
-      if (res.score > authoritativeMaxScore) {
-        throw new AppError(400, `Invalid score for criterion '${criterionName}': score (${res.score}) exceeds authoritative maxScore (${authoritativeMaxScore}).`);
+      if (res.score > canonicalCriterion.maxScore) {
+        throw new AppError(400, `Invalid score for criterion '${canonicalCriterion.name}': score (${res.score}) exceeds authoritative maxScore (${canonicalCriterion.maxScore}).`);
       }
 
-      calculatedTotalScore += res.score;
-      calculatedMaxScore += authoritativeMaxScore;
+      calculatedTotalScore += Math.round(res.score);
+      calculatedMaxScore += canonicalCriterion.maxScore;
 
       feedbackPayloads.push({
         evaluationId,
-        criterionId,
-        criterionName,
-        score: res.score,
-        maxScore: authoritativeMaxScore,
+        criterionId: canonicalCriterion.id,
+        criterionName: canonicalCriterion.name,
+        score: Math.round(res.score),
+        maxScore: canonicalCriterion.maxScore,
         evidence: res.evidence || 'Evaluated submission.',
         concern: res.concern || null,
         suggestion: res.suggestion || null,
-        confidence: res.confidence || null,
+        confidence: res.confidence ?? 1.0,
       });
+    }
+
+    // Verify all canonical criteria are present (exactly the canonical criteria must be evaluated)
+    for (const canonical of rubric.criteria) {
+      if (!seenCanonicalIds.has(canonical.id)) {
+        throw new AppError(400, `Incomplete evaluation: Missing canonical criterion '${canonical.name}'. All ${rubric.criteria.length} criteria must be evaluated.`);
+      }
     }
 
     // Ensure total score cannot mathematically exceed maximum allowable score
@@ -241,12 +253,81 @@ export class EvaluationService {
   }
 
   /**
-   * 5. Retries a FAILED evaluation in-place.
+   * Internal runner to execute evaluation against a claimed evaluation record.
+   * Assumes evaluation is in EVALUATING status.
+   */
+  private async runEvaluation(
+    evaluationId: string,
+    submission: {
+      id: string;
+      type: string;
+      content: string;
+      attempt: {
+        problem: {
+          title: string;
+          description: string;
+          problemStatement: string;
+          requirements: string[];
+          constraints: string[];
+        };
+      };
+    },
+    evaluator: Evaluator
+  ) {
+    const rubric = await rubricService.getDefaultRubric();
+
+    try {
+      const evaluationResult = await evaluator.evaluate({
+        problem: {
+          title: submission.attempt.problem.title,
+          description: submission.attempt.problem.description,
+          problemStatement: submission.attempt.problem.problemStatement,
+          requirements: submission.attempt.problem.requirements,
+          constraints: submission.attempt.problem.constraints,
+        },
+        submission: {
+          id: submission.id,
+          type: submission.type,
+          content: submission.content,
+        },
+        criteria: rubric.criteria.map((c) => ({
+          id: c.id,
+          name: c.name,
+          description: c.description,
+          maxScore: c.maxScore,
+          orderIndex: c.orderIndex,
+        })),
+      });
+
+      return await this.completeEvaluation(evaluationId, evaluationResult);
+    } catch (err: unknown) {
+      const errorMsg = (err as Error).message || 'Evaluation failed during processing.';
+      console.error(`[EvaluationService] Failure for evaluation ${evaluationId}:`, errorMsg);
+
+      await this.markEvaluationFailed(evaluationId, errorMsg);
+      throw new AppError(500, `Evaluation failed: ${errorMsg}`);
+    }
+  }
+
+  /**
+   * 5. Retries a FAILED evaluation in-place:
+   * - Validates evaluation is in FAILED state
+   * - Atomically transitions FAILED -> EVALUATING
+   * - Re-runs evaluator and completes evaluation with feedback and score
    * Preserves the 1:1 database constraint without creating duplicate rows.
    */
-  async retryEvaluation(evaluationId: string) {
+  async retryEvaluation(evaluationId: string, customEvaluator?: Evaluator) {
     const evaluation = await prisma.evaluation.findUnique({
       where: { id: evaluationId },
+      include: {
+        submission: {
+          include: {
+            attempt: {
+              include: { problem: true },
+            },
+          },
+        },
+      },
     });
 
     if (!evaluation) {
@@ -257,7 +338,11 @@ export class EvaluationService {
       throw new AppError(400, `Invalid evaluation state transition: Only FAILED evaluations can be retried. Current status is ${evaluation.status}.`);
     }
 
-    return this.startEvaluation(evaluationId);
+    // Atomically claim the evaluation: FAILED -> EVALUATING
+    await this.startEvaluation(evaluationId);
+
+    const evaluator = customEvaluator || this.defaultEvaluator;
+    return this.runEvaluation(evaluationId, evaluation.submission, evaluator);
   }
 
   /**
@@ -319,41 +404,8 @@ export class EvaluationService {
       }
     }
 
-    // Fetch Rubric Criteria
-    const rubric = await rubricService.getDefaultRubric();
     const evaluator = customEvaluator || this.defaultEvaluator;
-
-    try {
-      const evaluationResult = await evaluator.evaluate({
-        problem: {
-          title: submission.attempt.problem.title,
-          description: submission.attempt.problem.description,
-          problemStatement: submission.attempt.problem.problemStatement,
-          requirements: submission.attempt.problem.requirements,
-          constraints: submission.attempt.problem.constraints,
-        },
-        submission: {
-          id: submission.id,
-          type: submission.type,
-          content: submission.content,
-        },
-        criteria: rubric.criteria.map((c) => ({
-          id: c.id,
-          name: c.name,
-          description: c.description,
-          maxScore: c.maxScore,
-          orderIndex: c.orderIndex,
-        })),
-      });
-
-      return await this.completeEvaluation(evaluation.id, evaluationResult);
-    } catch (err: unknown) {
-      const errorMsg = (err as Error).message || 'Evaluation failed during processing.';
-      console.error(`[EvaluationService] Failure for submission ${submissionId}:`, errorMsg);
-
-      await this.markEvaluationFailed(evaluation.id, errorMsg);
-      throw new AppError(500, `Evaluation failed: ${errorMsg}`);
-    }
+    return this.runEvaluation(evaluation.id, submission, evaluator);
   }
 
   /**

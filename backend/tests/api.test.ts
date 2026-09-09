@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
 import app from '../src/app.js';
 import prisma from '../src/lib/prisma.js';
+import { evaluationService } from '../src/services/evaluation.service.js';
 
 describe('LLD Practice Platform - REST API Integration Tests', () => {
   let server: http.Server;
@@ -247,6 +248,38 @@ describe('LLD Practice Platform - REST API Integration Tests', () => {
       const data = (await res.json()) as any;
       expect(data.error.code).toBe('BAD_REQUEST');
       expect(data.error.message).toContain('Only FAILED evaluations can be retried');
+    });
+
+    it('POST /api/evaluations/:evaluationId/retry re-evaluates a FAILED evaluation to COMPLETED preserving the same evaluation row', async () => {
+      // 1. Create a fresh attempt and submission
+      const resAttempt = await fetch(`${baseUrl}/api/problems/${parkingLotId}/attempts`, { method: 'POST' });
+      const { attempt: retryAttempt } = (await resAttempt.json()) as any;
+
+      const resSub = await fetch(`${baseUrl}/api/attempts/${retryAttempt.id}/submission`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'Complete retry test: Parking lot design with vehicle hierarchies and ticket issuing.' }),
+      });
+      const { submission: retrySub } = (await resSub.json()) as any;
+
+      // 2. Force an evaluation failure
+      const createdEval = await evaluationService.createEvaluation(retrySub.id);
+      await evaluationService.startEvaluation(createdEval.id);
+      const failedEval = await evaluationService.markEvaluationFailed(createdEval.id, 'Simulated upstream model timeout');
+      expect(failedEval.status).toBe('FAILED');
+
+      // 3. Call the HTTP retry endpoint
+      const resRetry = await fetch(`${baseUrl}/api/evaluations/${failedEval.id}/retry`, {
+        method: 'POST',
+      });
+      expect(resRetry.status).toBe(200);
+
+      const dataRetry = (await resRetry.json()) as any;
+      expect(dataRetry.evaluation.id).toBe(failedEval.id); // Same evaluation ID (in-place retry)
+      expect(dataRetry.evaluation.status).toBe('COMPLETED');
+      expect(dataRetry.evaluation.totalScore).toBeGreaterThan(0);
+      expect(Array.isArray(dataRetry.evaluation.feedback)).toBe(true);
+      expect(dataRetry.evaluation.feedback.length).toBe(7); // All 7 canonical criteria persisted
     });
   });
 

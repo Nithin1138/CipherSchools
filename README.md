@@ -33,10 +33,10 @@ Problem Library ──► Problem Details ──► Start Attempt ──► LLD 
 - **Evaluator Abstraction (`Evaluator` Interface)**: The core grading workflow interacts with an `Evaluator` interface rather than directly binding to specific LLM vendor SDKs. This allows plugging in Gemini, OpenAI, rule-based heuristics, or human grading with zero changes to service logic.
 - **Structured LLM Output & Strict Validation**: The LLM must output clean JSON matching a strict Zod schema. The backend asserts that all 7 active rubric criteria are present, rejects unknown or duplicate criteria, enforces $[0, \text{maxScore}]$ bounds, and strips markdown wrappers.
 - **Deterministic Scoring**: The model is **never** permitted to calculate the total score. The backend derives $\text{totalScore} = \sum \text{criterionScores}$. This prevents hallucinated math and maintains mathematical consistency.
-- **Evaluation State Machine**: Evaluations follow explicit states (`PENDING` $\rightarrow$ `EVALUATING` $\rightarrow$ `COMPLETED` / `FAILED`). Completed evaluations are immutable.
+- **Evaluation State Machine & Synchronous Execution**: Evaluations follow explicit states (`PENDING` $\rightarrow$ `EVALUATING` $\rightarrow$ `COMPLETED` / `FAILED`). The state machine is architecturally designed to support asynchronous background execution (e.g. BullMQ/Redis), while the current MVP executes evaluation synchronously within the evaluation request and persists intermediate states to PostgreSQL for transparent failure and in-place retry handling. Completed evaluations are immutable.
 - **Learner Retry vs Evaluation Retry**:
   - **Learner Retry ("Try Again")**: Creates a brand new `Attempt` record, leaving prior attempts and evaluations completely intact in the historical timeline.
-  - **Evaluation Retry**: Used exclusively for transient model/network failures; transitions `FAILED` $\rightarrow$ `EVALUATING` in-place on the same `Evaluation` row without duplicating records.
+  - **Evaluation Retry**: Used exclusively for transient model/network failures; transitions `FAILED` $\rightarrow$ `EVALUATING` in-place on the same `Evaluation` row and re-executes grading without duplicating database records.
 - **Relational Integrity via PostgreSQL & Prisma**: Strictly enforces 1:1 Attempt-to-Submission and 1:1 Submission-to-Evaluation relationships via database-level `UNIQUE` constraints and foreign keys.
 
 ---
