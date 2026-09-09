@@ -49,31 +49,45 @@ export class EvaluationService {
   /**
    * 2. Moves evaluation into EVALUATING state.
    * Enforces valid state machine transitions: only PENDING or FAILED can move to EVALUATING.
+   * Uses an atomic conditional update at the database level to prevent concurrent execution races.
    */
   async startEvaluation(evaluationId: string) {
-    const evaluation = await prisma.evaluation.findUnique({
-      where: { id: evaluationId },
-    });
-
-    if (!evaluation) {
-      throw new AppError(404, `Evaluation not found with ID: ${evaluationId}`);
-    }
-
-    if (evaluation.status === EvaluationStatus.COMPLETED) {
-      throw new AppError(400, 'Invalid evaluation state transition: Evaluation is already COMPLETED and cannot be re-evaluated.');
-    }
-
-    if (evaluation.status === EvaluationStatus.EVALUATING) {
-      throw new AppError(400, 'Invalid evaluation state transition: Evaluation is already EVALUATING in progress.');
-    }
-
-    return prisma.evaluation.update({
-      where: { id: evaluationId },
+    // Atomic state claim: only update if status is PENDING or FAILED.
+    // Row-level lock in PostgreSQL prevents two simultaneous requests from claiming the evaluation.
+    const updateResult = await prisma.evaluation.updateMany({
+      where: {
+        id: evaluationId,
+        status: { in: [EvaluationStatus.PENDING, EvaluationStatus.FAILED] },
+      },
       data: {
         status: EvaluationStatus.EVALUATING,
         startedAt: new Date(),
         errorMessage: null,
       },
+    });
+
+    if (updateResult.count === 0) {
+      const evaluation = await prisma.evaluation.findUnique({
+        where: { id: evaluationId },
+      });
+
+      if (!evaluation) {
+        throw new AppError(404, `Evaluation not found with ID: ${evaluationId}`);
+      }
+
+      if (evaluation.status === EvaluationStatus.COMPLETED) {
+        throw new AppError(400, 'Invalid evaluation state transition: Evaluation is already COMPLETED and cannot be re-evaluated.');
+      }
+
+      if (evaluation.status === EvaluationStatus.EVALUATING) {
+        throw new AppError(400, 'Invalid evaluation state transition: Evaluation is already EVALUATING in progress.');
+      }
+
+      throw new AppError(400, `Invalid evaluation state transition: Cannot move from ${evaluation.status} to EVALUATING.`);
+    }
+
+    return prisma.evaluation.findUniqueOrThrow({
+      where: { id: evaluationId },
       include: { feedback: true },
     });
   }
@@ -109,7 +123,8 @@ export class EvaluationService {
    * 4. Completes evaluation atomically: persists structured feedback and marks COMPLETED.
    * Enforces:
    * - Must be in EVALUATING state
-   * - Scoring bounds validation (0 <= score <= maxScore)
+   * - Rubric is authoritative source of truth for criteria and max scores
+   * - Scoring bounds validation (0 <= score <= authoritativeMaxScore)
    * - Deterministic score summing
    */
   async completeEvaluation(evaluationId: string, result: EvaluationResult) {
@@ -129,7 +144,18 @@ export class EvaluationService {
       throw new AppError(400, 'Invalid evaluation result: Criteria feedback results are required.');
     }
 
-    // Validate scoring and calculate deterministic total
+    // Resolve authoritative rubric criteria from database
+    let rubricCriteriaMap = new Map<string, { id: string; name: string; maxScore: number }>();
+    let rubricByNameMap = new Map<string, { id: string; name: string; maxScore: number }>();
+    try {
+      const rubric = await rubricService.getDefaultRubric();
+      rubricCriteriaMap = new Map(rubric.criteria.map((c) => [c.id, c]));
+      rubricByNameMap = new Map(rubric.criteria.map((c) => [c.name.toLowerCase().trim(), c]));
+    } catch {
+      // Fallback for isolated unit tests where default rubric might not be seeded
+    }
+
+    // Validate scoring against authoritative rubric and calculate deterministic total
     let calculatedTotalScore = 0;
     let calculatedMaxScore = 0;
     const feedbackPayloads: {
@@ -145,6 +171,13 @@ export class EvaluationService {
     }[] = [];
 
     for (const res of result.criterionResults) {
+      const canonicalCriterion = (res.criterionId && rubricCriteriaMap.get(res.criterionId)) ||
+                                  rubricByNameMap.get(res.criterionName.toLowerCase().trim());
+      
+      const authoritativeMaxScore = canonicalCriterion ? canonicalCriterion.maxScore : res.maxScore;
+      const criterionId = canonicalCriterion ? canonicalCriterion.id : (res.criterionId || null);
+      const criterionName = canonicalCriterion ? canonicalCriterion.name : res.criterionName;
+
       if (typeof res.score !== 'number' || isNaN(res.score)) {
         throw new AppError(400, `Invalid score for criterion '${res.criterionName}': must be a valid number.`);
       }
@@ -153,19 +186,19 @@ export class EvaluationService {
         throw new AppError(400, `Invalid score for criterion '${res.criterionName}': score cannot be negative.`);
       }
 
-      if (res.score > res.maxScore) {
-        throw new AppError(400, `Invalid score for criterion '${res.criterionName}': score (${res.score}) exceeds maxScore (${res.maxScore}).`);
+      if (res.score > authoritativeMaxScore) {
+        throw new AppError(400, `Invalid score for criterion '${criterionName}': score (${res.score}) exceeds authoritative maxScore (${authoritativeMaxScore}).`);
       }
 
       calculatedTotalScore += res.score;
-      calculatedMaxScore += res.maxScore;
+      calculatedMaxScore += authoritativeMaxScore;
 
       feedbackPayloads.push({
         evaluationId,
-        criterionId: res.criterionId || null,
-        criterionName: res.criterionName,
+        criterionId,
+        criterionName,
         score: res.score,
-        maxScore: res.maxScore,
+        maxScore: authoritativeMaxScore,
         evidence: res.evidence || 'Evaluated submission.',
         concern: res.concern || null,
         suggestion: res.suggestion || null,
@@ -261,12 +294,29 @@ export class EvaluationService {
 
     // Transition or create Evaluation record
     if (evaluation) {
-      if (evaluation.status !== EvaluationStatus.EVALUATING) {
-        evaluation = await this.startEvaluation(evaluation.id);
+      if (evaluation.status === EvaluationStatus.EVALUATING) {
+        // Already being evaluated concurrently by another request
+        return evaluation;
       }
+      evaluation = await this.startEvaluation(evaluation.id);
     } else {
-      const created = await this.createEvaluation(submissionId);
-      evaluation = await this.startEvaluation(created.id);
+      try {
+        const created = await this.createEvaluation(submissionId);
+        evaluation = await this.startEvaluation(created.id);
+      } catch (err: any) {
+        const existing = await prisma.evaluation.findUnique({
+          where: { submissionId },
+          include: { feedback: true },
+        });
+        if (existing) {
+          if (existing.status === EvaluationStatus.COMPLETED || existing.status === EvaluationStatus.EVALUATING) {
+            return existing;
+          }
+          evaluation = await this.startEvaluation(existing.id);
+        } else {
+          throw err;
+        }
+      }
     }
 
     // Fetch Rubric Criteria

@@ -48,7 +48,7 @@ Most current platforms fail to address the core pedagogical requirement of LLD p
 1. **Uncalibrated, Non-Deterministic Scoring**: Generic AI tools output arbitrary overall scores without structured sub-scores or consistent grading criteria across attempts.
 2. **Hallucinated Feedback**: Generic LLMs frequently praise or criticize components the student never actually wrote (e.g., claiming "Good use of Redis caching" when the student only designed in-memory classes).
 3. **Lack of an Iterative Practice Loop**: Existing tools lack a formal retry mechanism where previous attempts are preserved, allowing learners to compare feedback across attempts and track measurable improvement.
-4. **Tooling Overhead vs. Design Reasoning**: Visual canvas tools demand 80% of the learner's effort for diagram aesthetics rather than design reasoning, object modeling, and trade-off justification.
+4. **Tooling Overhead vs. Design Reasoning**: Visual canvas tools can shift learner effort toward diagram construction rather than design reasoning, object modeling, and trade-off justification.
 
 ---
 

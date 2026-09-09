@@ -192,6 +192,6 @@ While the MVP is built as a clean monolith, the domain boundaries are designed t
 ## 7. Key Trade-Offs Made
 
 1. **Monolith over Microservices**: Selected to maximize development velocity, domain coherence, and operational simplicity.
-2. **Text-First Submissions over UML Canvas**: Text design captures the core cognitive requirements of LLD (responsibilities, interfaces, trade-offs) without spending 80% of development time on a canvas editor.
+2. **Text-First Submissions over UML Canvas**: Text design captures the core cognitive requirements of LLD (responsibilities, interfaces, trade-offs) while keeping focus squarely on design reasoning rather than canvas diagram construction.
 3. **Deterministic Score Summing**: Rather than trusting the LLM to output a total score, the backend calculates $\sum \text{criterionScores}$, eliminating arithmetic hallucinations.
 4. **In-place Evaluation Retries**: Rather than creating orphaned evaluation records, retries update the existing unique record, preventing database bloat.

@@ -56,6 +56,9 @@ Problem Library ──► Problem Details ──► Start Attempt ──► LLD 
 ```
 CipherSchools/
 ├── README.md                      # Project overview, setup, and architecture summary
+├── RESEARCH_NOTE.md               # Research note: learner problem, market analysis, identified gaps
+├── DESIGN_NOTE.md                 # System architecture & low-level design document
+├── AI_USAGE.md                    # Transparent audit of AI-assisted engineering decisions
 ├── docs/
 │   ├── ARCHITECTURE.md            # Deep system architecture & sequence diagrams
 │   ├── API.md                     # REST API specification & schemas
@@ -68,15 +71,14 @@ CipherSchools/
 │   │   ├── app.ts                 # Express app configuration & middleware
 │   │   ├── domain/                # Pure types and Evaluator domain contract
 │   │   ├── evaluators/            # LLMEvaluator, PromptBuilder, OutputValidator, Providers
-│   │   ├── controllers/           # Thin HTTP controllers
-│   │   ├── services/              # Domain services (Problem, Attempt, Submission, Evaluation, Rubric)
-│   │   ├── routes/                # Express REST routes
-│   │   └── middleware/            # Centralized AppError handling
-│   └── tests/                     # 5 Vitest suites (54 automated tests)
+│   │   ├── services/              # Domain logic (Attempt, Submission, Evaluation, Problem, Rubric)
+│   │   ├── controllers/           # HTTP controllers
+│   │   └── routes/                # Express router mounts
+│   └── tests/                     # 5 test suites (domain, api, flow, llm, problems)
 └── frontend/
     ├── src/
-    │   ├── api/                   # Typed API client functions
-    │   ├── components/            # ProblemCard, ScoreDisplay, FeedbackCard, AttemptHistory, ErrorState
+    │   ├── api/                   # API client bindings
+    │   ├── components/            # UI components (ProblemCard, ScoreDisplay, FeedbackCard, AttemptHistory)
     │   ├── pages/                 # ProblemLibrary, ProblemDetail, AttemptWorkspace, EvaluationResult
     │   ├── types/                 # Frontend TypeScript interfaces
     │   └── App.tsx                # Client-side router & navbar
