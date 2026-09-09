@@ -44,9 +44,9 @@ Problem Library ──► Problem Details ──► Start Attempt ──► LLD 
 ## Tech Stack
 
 - **Frontend**: React 19, TypeScript, React Router v7, Vite 8, Vanilla CSS (Dark Workbench design system).
-- **Backend**: Node.js, Express 5, TypeScript, Zod.
+- **Backend**: Node.js, Express 4, TypeScript, Zod.
 - **Database**: PostgreSQL with Prisma ORM.
-- **AI / Evaluation**: Google Gemini (configurable via `GEMINI_MODEL`, default: `gemini-1.5-flash`) via structured `Evaluator` abstraction; offline `MockLLMProvider` for deterministic testing.
+- **AI / Evaluation**: Google Gemini (configurable via `GEMINI_MODEL`, default: `gemini-3.6-flash`) via structured `Evaluator` abstraction; offline `MockLLMProvider` for deterministic testing.
 - **Testing**: Vitest integration and domain test suite.
 
 ---
@@ -113,7 +113,7 @@ PORT=3001
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/lld_practice?schema=public"
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 ```
 
 Run database migrations and seed the 4 core problems:
@@ -147,7 +147,7 @@ Open `http://localhost:5173` in your browser.
 | `DATABASE_URL` | Yes | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/lld_practice` |
 | `LLM_PROVIDER` | No | Active evaluation provider (`gemini`, `openai`, `mock`) | `gemini` |
 | `GEMINI_API_KEY` | Conditional | Google Gemini API key (required for live Gemini evaluations) | `AIzaSy...` |
-| `GEMINI_MODEL` | No | Gemini model identifier | `gemini-1.5-flash` |
+| `GEMINI_MODEL` | No | Gemini model identifier | `gemini-3.6-flash` |
 | `OPENAI_API_KEY` | Conditional | OpenAI API key (if using OpenAI provider) | `sk-...` |
 | `VITE_API_BASE_URL` | No | Optional custom API origin for frontend production | `/api` |
 

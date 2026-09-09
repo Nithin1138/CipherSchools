@@ -218,9 +218,9 @@ export class EvaluationService {
       }
     }
 
-    // Ensure total score cannot mathematically exceed maximum allowable score
-    if (calculatedMaxScore > 0 && calculatedTotalScore > calculatedMaxScore) {
-      calculatedTotalScore = calculatedMaxScore;
+    // Invariant check: Fail loudly if sum mathematically exceeds max score
+    if (calculatedTotalScore > calculatedMaxScore) {
+      throw new AppError(500, 'Internal scoring invariant violated: calculated total exceeds canonical max score.');
     }
 
     // Atomically persist feedback items and complete evaluation

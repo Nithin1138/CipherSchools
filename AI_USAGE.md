@@ -59,4 +59,4 @@ In accordance with the assignment brief, this document outlines 4 meaningful dec
     evaluate(input: EvaluationInput): Promise<EvaluationResult>;
   }
   ```
-  `LLMEvaluator` implements this contract. The service layer interacts solely with the abstraction. In addition, we built intelligent heuristic fallback directly into the evaluator so the application remains fully testable even in offline or unkeyed development environments.
+  `LLMEvaluator` implements this contract. The service layer interacts solely with the abstraction. We added a deterministic MockLLMProvider so the evaluation pipeline can be tested offline without external API calls.
