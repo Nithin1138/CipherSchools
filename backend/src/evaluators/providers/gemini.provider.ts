@@ -10,6 +10,7 @@ const DEPRECATED_MODELS = new Set([
 ]);
 
 const FALLBACK_MODEL_SEQUENCE = [
+  'gemini-3.7-flash',
   'gemini-3.6-flash',
   'gemini-2.5-flash',
   'gemini-3.6-pro',
@@ -24,7 +25,8 @@ export class GeminiProvider implements LLMProvider {
 
   constructor(apiKey?: string, modelName?: string) {
     this.apiKey = (apiKey !== undefined ? apiKey : process.env.GEMINI_API_KEY) || '';
-    const candidate = (modelName !== undefined ? modelName : process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL).trim();
+    const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+    const candidate = (modelName !== undefined ? modelName : (!isTest && process.env.GEMINI_MODEL) || DEFAULT_GEMINI_MODEL).trim();
     this.modelName = DEPRECATED_MODELS.has(candidate) ? DEFAULT_GEMINI_MODEL : candidate;
 
     if (!this.apiKey || this.apiKey === 'your_gemini_api_key_here') {
@@ -92,7 +94,7 @@ export class GeminiProvider implements LLMProvider {
   }
 
   private async executeModelRequest(model: string, prompt: PromptPayload, options?: ProviderOptions): Promise<string> {
-    const timeoutMs = options?.timeoutMs ?? 35000;
+    const timeoutMs = options?.timeoutMs ?? 25000;
     const temperature = options?.temperature ?? 0.2;
     const maxRetries = 3;
 

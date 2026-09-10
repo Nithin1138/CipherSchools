@@ -42,7 +42,7 @@ export const EvaluationResult: React.FC = () => {
       } catch {
         // Continue polling on temporary hiccup
       }
-    }, 2000);
+    }, 1200);
   }, [clearPolling]);
 
   const loadData = useCallback(async () => {
@@ -53,6 +53,7 @@ export const EvaluationResult: React.FC = () => {
 
       if (sub.evaluation) {
         setEvaluation(sub.evaluation);
+        setLoading(false);
 
         // If still in EVALUATING or PENDING, schedule polling
         if (sub.evaluation.status === 'EVALUATING' || sub.evaluation.status === 'PENDING') {
@@ -61,7 +62,19 @@ export const EvaluationResult: React.FC = () => {
           clearPolling();
         }
       } else {
-        // If no evaluation yet, trigger it
+        // Immediately show evaluating progress animation instead of generic loader
+        setEvaluation({
+          id: 'eval-pending',
+          submissionId,
+          evaluatorType: 'LLM',
+          status: 'EVALUATING',
+          totalScore: null,
+          maxScore: 100,
+          startedAt: new Date().toISOString(),
+          feedback: [],
+        });
+        setLoading(false);
+
         try {
           const evalData = await evaluationsApi.triggerEvaluation(submissionId);
           setEvaluation(evalData);
@@ -98,12 +111,26 @@ export const EvaluationResult: React.FC = () => {
 
         if (sub.evaluation) {
           setEvaluation(sub.evaluation);
+          setLoading(false);
           if (sub.evaluation.status === 'EVALUATING' || sub.evaluation.status === 'PENDING') {
             startPolling(sub.evaluation.id);
           } else {
             clearPolling();
           }
         } else {
+          // Immediately show evaluating progress animation instead of generic loader
+          setEvaluation({
+            id: 'eval-pending',
+            submissionId,
+            evaluatorType: 'LLM',
+            status: 'EVALUATING',
+            totalScore: null,
+            maxScore: 100,
+            startedAt: new Date().toISOString(),
+            feedback: [],
+          });
+          setLoading(false);
+
           try {
             const evalData = await evaluationsApi.triggerEvaluation(submissionId);
             if (!active) return;

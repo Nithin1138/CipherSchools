@@ -87,12 +87,32 @@ export const AttemptWorkspace: React.FC = () => {
     loadAttemptData();
   }, [attemptId, navigate, storageKey]);
 
+  // Debounce draft storage to eliminate typing latency on large design documents
+  const debouncedDraftRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleContentChange = (val: string) => {
     setContent(val);
     if (storageKey) {
-      localStorage.setItem(storageKey, val);
+      if (debouncedDraftRef.current) {
+        clearTimeout(debouncedDraftRef.current);
+      }
+      debouncedDraftRef.current = setTimeout(() => {
+        try {
+          localStorage.setItem(storageKey, val);
+        } catch {
+          // ignore storage quota errors
+        }
+      }, 300);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (debouncedDraftRef.current) {
+        clearTimeout(debouncedDraftRef.current);
+      }
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

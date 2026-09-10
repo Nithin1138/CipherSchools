@@ -73,8 +73,28 @@ button {
   cursor: pointer;
   border: none;
   background: none;
+  touch-action: manipulation;
+  transition: transform 0.08s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 input, textarea, select {
   font-family: inherit;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Optimize rendering and layout containment */
+.solution-textarea {
+  contain: paint;
+  will-change: transform;
+}
+
+.problem-card {
+  will-change: transform;
 }
