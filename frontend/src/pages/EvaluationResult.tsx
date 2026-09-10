@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { submissionsApi, evaluationsApi, attemptsApi } from '../api/index.js';
 import type { Submission, Evaluation } from '../types/index.js';
@@ -21,14 +21,31 @@ export const EvaluationResult: React.FC = () => {
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const clearPolling = () => {
+  const clearPolling = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const loadData = async () => {
+  const startPolling = useCallback((evalId: string) => {
+    clearPolling();
+    pollTimerRef.current = setInterval(async () => {
+      try {
+        const updated = await evaluationsApi.getEvaluation(evalId);
+        setEvaluation(updated);
+
+        // Stop polling when COMPLETED or FAILED
+        if (updated.status === 'COMPLETED' || updated.status === 'FAILED') {
+          clearPolling();
+        }
+      } catch {
+        // Continue polling on temporary hiccup
+      }
+    }, 2000);
+  }, [clearPolling]);
+
+  const loadData = useCallback(async () => {
     if (!submissionId) return;
     try {
       const sub = await submissionsApi.getSubmission(submissionId);
@@ -60,31 +77,49 @@ export const EvaluationResult: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const startPolling = (evalId: string) => {
-    clearPolling();
-    pollTimerRef.current = setInterval(async () => {
-      try {
-        const updated = await evaluationsApi.getEvaluation(evalId);
-        setEvaluation(updated);
-
-        // Stop polling when COMPLETED or FAILED
-        if (updated.status === 'COMPLETED' || updated.status === 'FAILED') {
-          clearPolling();
-        }
-      } catch {
-        // Continue polling on temporary hiccup
-      }
-    }, 2000);
-  };
+  }, [submissionId, startPolling, clearPolling]);
 
   useEffect(() => {
-    loadData();
+    let active = true;
+    async function init() {
+      if (!submissionId) return;
+      try {
+        const sub = await submissionsApi.getSubmission(submissionId);
+        if (!active) return;
+        setSubmission(sub);
+
+        if (sub.evaluation) {
+          setEvaluation(sub.evaluation);
+          if (sub.evaluation.status === 'EVALUATING' || sub.evaluation.status === 'PENDING') {
+            startPolling(sub.evaluation.id);
+          } else {
+            clearPolling();
+          }
+        } else {
+          try {
+            const evalData = await evaluationsApi.triggerEvaluation(submissionId);
+            if (!active) return;
+            setEvaluation(evalData);
+            if (evalData.status === 'EVALUATING' || evalData.status === 'PENDING') {
+              startPolling(evalData.id);
+            }
+          } catch (evalErr: unknown) {
+            if (active) setError((evalErr as Error).message || 'Failed to trigger evaluation.');
+          }
+        }
+      } catch (err: unknown) {
+        if (active) setError((err as Error).message || 'Failed to load submission.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    init();
     return () => {
+      active = false;
       clearPolling();
     };
-  }, [submissionId]);
+  }, [submissionId, startPolling, clearPolling]);
 
   const handleRetryEvaluation = async () => {
     if (!evaluation) return;

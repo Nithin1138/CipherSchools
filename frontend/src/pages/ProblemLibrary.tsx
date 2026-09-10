@@ -25,7 +25,27 @@ export const ProblemLibrary: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchProblems();
+    let active = true;
+    async function load() {
+      try {
+        const list = await problemsApi.listProblems();
+        if (active) {
+          setProblems(list);
+        }
+      } catch (err: unknown) {
+        if (active) {
+          setError((err as Error).message || 'Failed to load problems.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+    load();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filteredProblems = problems.filter((p) => {

@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js';
+import { Prisma, RubricCriterion } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
 import { EvaluationStatus, EvaluatorType, EvaluationResult } from '../domain/types.js';
 import { Evaluator } from '../domain/evaluator.js';
@@ -151,8 +152,8 @@ export class EvaluationService {
       throw new AppError(500, 'Authoritative default evaluation rubric is not configured in the database.');
     }
 
-    const rubricCriteriaMap = new Map(rubric.criteria.map((c) => [c.id, c]));
-    const rubricByNameMap = new Map(rubric.criteria.map((c) => [c.name.toLowerCase().trim(), c]));
+    const rubricCriteriaMap = new Map(rubric.criteria.map((c: RubricCriterion) => [c.id, c]));
+    const rubricByNameMap = new Map(rubric.criteria.map((c: RubricCriterion) => [c.name.toLowerCase().trim(), c]));
     const seenCanonicalIds = new Set<string>();
 
     // Validate scoring against authoritative rubric and calculate deterministic total
@@ -224,7 +225,7 @@ export class EvaluationService {
     }
 
     // Atomically persist feedback items and complete evaluation
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Clear previous feedback if any existed (e.g. from earlier attempt)
       await tx.feedback.deleteMany({
         where: { evaluationId },
@@ -290,7 +291,7 @@ export class EvaluationService {
           type: submission.type,
           content: submission.content,
         },
-        criteria: rubric.criteria.map((c) => ({
+        criteria: rubric.criteria.map((c: RubricCriterion) => ({
           id: c.id,
           name: c.name,
           description: c.description,
@@ -383,12 +384,23 @@ export class EvaluationService {
         // Already being evaluated concurrently by another request
         return evaluation;
       }
-      evaluation = await this.startEvaluation(evaluation.id);
+      try {
+        evaluation = await this.startEvaluation(evaluation.id);
+      } catch (err: unknown) {
+        const current = await prisma.evaluation.findUnique({
+          where: { id: evaluation.id },
+          include: { feedback: true },
+        });
+        if (current && (current.status === EvaluationStatus.EVALUATING || current.status === EvaluationStatus.COMPLETED)) {
+          return current;
+        }
+        throw err;
+      }
     } else {
       try {
         const created = await this.createEvaluation(submissionId);
         evaluation = await this.startEvaluation(created.id);
-      } catch (err: any) {
+      } catch (err: unknown) {
         const existing = await prisma.evaluation.findUnique({
           where: { submissionId },
           include: { feedback: true },
@@ -397,7 +409,18 @@ export class EvaluationService {
           if (existing.status === EvaluationStatus.COMPLETED || existing.status === EvaluationStatus.EVALUATING) {
             return existing;
           }
-          evaluation = await this.startEvaluation(existing.id);
+          try {
+            evaluation = await this.startEvaluation(existing.id);
+          } catch (startErr: unknown) {
+            const recheck = await prisma.evaluation.findUnique({
+              where: { id: existing.id },
+              include: { feedback: true },
+            });
+            if (recheck && (recheck.status === EvaluationStatus.EVALUATING || recheck.status === EvaluationStatus.COMPLETED)) {
+              return recheck;
+            }
+            throw startErr;
+          }
         } else {
           throw err;
         }

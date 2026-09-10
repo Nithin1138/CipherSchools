@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js';
+import { Prisma } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
 import { AttemptStatus, SubmissionType } from '../domain/types.js';
 
@@ -30,7 +31,7 @@ export class SubmissionService {
     }
 
     // Persist submission and mark attempt completed in a transaction
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const submission = await tx.submission.create({
         data: {
           attemptId,

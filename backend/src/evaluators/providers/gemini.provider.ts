@@ -7,7 +7,7 @@ export class GeminiProvider implements LLMProvider {
 
   constructor(apiKey?: string, modelName?: string) {
     this.apiKey = apiKey || process.env.GEMINI_API_KEY || '';
-    this.modelName = modelName || process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+    this.modelName = modelName || process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
     if (!this.apiKey || this.apiKey === 'your_gemini_api_key_here') {
       throw new Error('Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env.');

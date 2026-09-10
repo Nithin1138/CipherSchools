@@ -38,8 +38,10 @@ export const AttemptHistory: React.FC<AttemptHistoryProps> = ({
           <tr>
             <th>Attempt</th>
             <th>Date Started</th>
-            <th>Status</th>
+            <th>Attempt Status</th>
+            <th>Evaluation State</th>
             <th>Score</th>
+            <th>Trajectory</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -47,9 +49,42 @@ export const AttemptHistory: React.FC<AttemptHistoryProps> = ({
           {attempts.map((att, idx) => {
             const attemptNum = attempts.length - idx;
             const evalData = att.submission?.evaluation;
-            const evalStatus = evalData?.status || (att.submission ? 'SUBMITTED' : att.status);
-            const score = evalData?.totalScore;
+            const evalStatus = evalData?.status || (att.submission ? 'SUBMITTED' : 'NOT_SUBMITTED');
+            const score = evalData?.status === 'COMPLETED' ? evalData.totalScore : null;
             const submissionId = att.submission?.id;
+
+            // Compute comparison with previous chronological attempt (idx + 1)
+            let comparisonBadge = null;
+            if (idx === attempts.length - 1) {
+              comparisonBadge = <span className="comparison-pill comparison-baseline">Baseline</span>;
+            } else {
+              const prevEval = attempts[idx + 1]?.submission?.evaluation;
+              const prevScore = prevEval?.status === 'COMPLETED' ? prevEval.totalScore : null;
+              if (score !== null && prevScore !== null) {
+                const diff = score - prevScore;
+                if (diff > 0) {
+                  comparisonBadge = (
+                    <span className="comparison-pill comparison-improved" title={`+${diff} points from Attempt #${attemptNum - 1}`}>
+                      &uarr; +{diff} pts
+                    </span>
+                  );
+                } else if (diff < 0) {
+                  comparisonBadge = (
+                    <span className="comparison-pill comparison-regression" title={`${diff} points from Attempt #${attemptNum - 1}`}>
+                      &darr; {diff} pts
+                    </span>
+                  );
+                } else {
+                  comparisonBadge = (
+                    <span className="comparison-pill comparison-same" title="Score identical to previous attempt">
+                      = 0 pts
+                    </span>
+                  );
+                }
+              } else {
+                comparisonBadge = <span className="muted-dash">-</span>;
+              }
+            }
 
             return (
               <tr key={att.id}>
@@ -58,16 +93,24 @@ export const AttemptHistory: React.FC<AttemptHistoryProps> = ({
                 </td>
                 <td className="date-cell">{new Date(att.startedAt).toLocaleString()}</td>
                 <td className="status-cell">
+                  <span className={`status-pill status-${att.status.toLowerCase()}`}>
+                    {att.status}
+                  </span>
+                </td>
+                <td className="status-cell">
                   <span className={`status-pill status-${evalStatus.toLowerCase()}`}>
                     {evalStatus}
                   </span>
                 </td>
                 <td className="score-cell">
-                  {score !== undefined && score !== null ? (
+                  {score !== null ? (
                     <strong className="score-value">{score} / 100</strong>
                   ) : (
                     <span className="muted-dash">-</span>
                   )}
+                </td>
+                <td className="trajectory-cell">
+                  {comparisonBadge}
                 </td>
                 <td className="action-cell">
                   {submissionId ? (

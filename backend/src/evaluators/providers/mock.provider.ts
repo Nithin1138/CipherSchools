@@ -62,13 +62,24 @@ export class MockLLMProvider implements LLMProvider {
     // Dynamic mock response extracting criteria from prompt user text
     const idMatches = [...prompt.user.matchAll(/criterionId:\s*"([^"]+)"\s*\n\s*- criterionName:\s*"([^"]+)"\s*\n\s*- maxScore:\s*(\d+)/g)];
     if (idMatches.length > 0) {
-      const criteria = idMatches.map((m) => {
+      // Extract candidate submission snippet from prompt if present
+      const submissionMatch = prompt.user.match(/Candidate Submission Content:\s*\n([\s\S]*?)(?=\n\s*Evaluation Rubric Criteria:|$)/i);
+      const rawSnippet = submissionMatch ? submissionMatch[1].trim() : '';
+      const lines = rawSnippet.split('\n').map((l) => l.trim()).filter((l) => l.length >= 6);
+      const firstSnippet = lines.length > 0 ? `"${lines[0].slice(0, 35)}"` : '';
+
+      const criteria = idMatches.map((m, idx) => {
         const maxScore = parseInt(m[3], 10);
+        const isAlternate = idx % 2 === 1;
+        const evidence = firstSnippet && !isAlternate
+          ? `Observed in candidate submission: ${firstSnippet} addressing ${m[2]}.`
+          : `The submission does not specify complete edge case handling or concurrency strategy for ${m[2]}.`;
+
         return {
           criterionId: m[1],
           criterionName: m[2],
           score: Math.floor(maxScore * 0.8),
-          evidence: `Demonstrated architectural patterns and cohesive class structure for ${m[2]}.`,
+          evidence,
           concern: `Edge case handling for ${m[2]} could be expanded.`,
           suggestion: `Consider refining interface abstractions for ${m[2]}.`,
           confidence: 0.95,

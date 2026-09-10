@@ -71,8 +71,8 @@ export class LLMEvaluator implements Evaluator {
       // 3. Parse JSON safely (handling markdown code wrappers)
       const parsedJson = OutputValidator.parseJsonString(rawResponse);
 
-      // 4. Validate output schema, criterion IDs, score boundaries, and confidence
-      const criterionResults = OutputValidator.validate(parsedJson, input.criteria);
+      // 4. Validate output schema, criterion IDs, score boundaries, confidence, and evidence grounding
+      const criterionResults = OutputValidator.validate(parsedJson, input.criteria, input.submission.content);
 
       const latencyMs = Date.now() - startTime;
       console.log(

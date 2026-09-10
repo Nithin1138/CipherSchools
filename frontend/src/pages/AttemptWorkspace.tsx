@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { attemptsApi, submissionsApi, evaluationsApi } from '../api/index.js';
-import type { Attempt, Problem } from '../types/index.js';
+import { attemptsApi, submissionsApi, rubricApi } from '../api/index.js';
+import type { Attempt, Problem, Rubric } from '../types/index.js';
 import { LoadingState } from '../components/LoadingState.js';
 import { ErrorState } from '../components/ErrorState.js';
 
@@ -37,6 +37,7 @@ export const AttemptWorkspace: React.FC = () => {
 
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
+  const [rubric, setRubric] = useState<Rubric | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,8 +52,14 @@ export const AttemptWorkspace: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const att = await attemptsApi.getAttempt(attemptId);
+        const [att, defaultRubric] = await Promise.all([
+          attemptsApi.getAttempt(attemptId),
+          rubricApi.getDefaultRubric().catch(() => null),
+        ]);
         setAttempt(att);
+        if (defaultRubric) {
+          setRubric(defaultRubric);
+        }
         if (att.problem) {
           setProblem(att.problem);
         }
@@ -108,17 +115,7 @@ export const AttemptWorkspace: React.FC = () => {
         localStorage.removeItem(storageKey);
       }
 
-      // 2. Trigger evaluation asynchronously
-      // Even if triggerEvaluation takes a moment or runs async, navigate to evaluation page immediately
-      try {
-        evaluationsApi.triggerEvaluation(submission.id).catch((evalErr) => {
-          console.warn('Evaluation trigger background status:', evalErr);
-        });
-      } catch {
-        // Handled on result page
-      }
-
-      // 3. Navigate to evaluation result experience
+      // 2. Navigate to evaluation result view (single orchestration path for evaluation lifecycle)
       navigate(`/submissions/${submission.id}`);
     } catch (err: unknown) {
       setError((err as Error).message || 'Submission failed. Your draft has been kept safe.');
@@ -216,36 +213,53 @@ export const AttemptWorkspace: React.FC = () => {
             )}
 
             <div className="ref-card rubric-summary-card">
-              <h3 className="ref-card-title">Rubric Evaluation Dimensions (100 pts)</h3>
+              <h3 className="ref-card-title">
+                Rubric Evaluation Dimensions ({rubric?.criteria ? rubric.criteria.reduce((sum, c) => sum + c.maxScore, 0) : 100} pts)
+              </h3>
               <div className="rubric-mini-list">
-                <div className="rubric-mini-item">
-                  <span>1. Requirement Understanding</span>
-                  <strong>15 pts</strong>
-                </div>
-                <div className="rubric-mini-item">
-                  <span>2. Class Responsibilities (SRP)</span>
-                  <strong>20 pts</strong>
-                </div>
-                <div className="rubric-mini-item">
-                  <span>3. Encapsulation &amp; Interfaces</span>
-                  <strong>15 pts</strong>
-                </div>
-                <div className="rubric-mini-item">
-                  <span>4. Coupling &amp; Cohesion</span>
-                  <strong>15 pts</strong>
-                </div>
-                <div className="rubric-mini-item">
-                  <span>5. Abstraction &amp; Design Patterns</span>
-                  <strong>10 pts</strong>
-                </div>
-                <div className="rubric-mini-item">
-                  <span>6. Extensibility (OCP)</span>
-                  <strong>15 pts</strong>
-                </div>
-                <div className="rubric-mini-item">
-                  <span>7. Edge Cases &amp; Testability</span>
-                  <strong>10 pts</strong>
-                </div>
+                {rubric?.criteria && rubric.criteria.length > 0 ? (
+                  [...rubric.criteria]
+                    .sort((a, b) => a.orderIndex - b.orderIndex)
+                    .map((crit, idx) => (
+                      <div className="rubric-mini-item" key={crit.id}>
+                        <span title={crit.description}>
+                          {idx + 1}. {crit.name}
+                        </span>
+                        <strong>{crit.maxScore} pts</strong>
+                      </div>
+                    ))
+                ) : (
+                  <>
+                    <div className="rubric-mini-item">
+                      <span>1. Requirement Understanding</span>
+                      <strong>15 pts</strong>
+                    </div>
+                    <div className="rubric-mini-item">
+                      <span>2. Class Responsibilities (SRP)</span>
+                      <strong>20 pts</strong>
+                    </div>
+                    <div className="rubric-mini-item">
+                      <span>3. Encapsulation &amp; Interfaces</span>
+                      <strong>15 pts</strong>
+                    </div>
+                    <div className="rubric-mini-item">
+                      <span>4. Coupling &amp; Cohesion</span>
+                      <strong>15 pts</strong>
+                    </div>
+                    <div className="rubric-mini-item">
+                      <span>5. Abstraction &amp; Design Patterns</span>
+                      <strong>10 pts</strong>
+                    </div>
+                    <div className="rubric-mini-item">
+                      <span>6. Extensibility (OCP)</span>
+                      <strong>15 pts</strong>
+                    </div>
+                    <div className="rubric-mini-item">
+                      <span>7. Edge Cases &amp; Testability</span>
+                      <strong>10 pts</strong>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

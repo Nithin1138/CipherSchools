@@ -3,7 +3,7 @@ import prisma from '../src/lib/prisma.js';
 import { LLMEvaluator } from '../src/evaluators/llm.evaluator.js';
 import { MockLLMProvider } from '../src/evaluators/providers/mock.provider.js';
 import { EvaluationService } from '../src/services/evaluation.service.js';
-import { OutputValidationError } from '../src/evaluators/validator.js';
+import { OutputValidator, OutputValidationError } from '../src/evaluators/validator.js';
 import { EvaluationInput, CriterionSpec, EvaluationStatus, EvaluatorType } from '../src/domain/types.js';
 
 describe('LLMEvaluator & Provider Architecture Tests (Phase 5)', () => {
@@ -227,7 +227,7 @@ interface ParkingStrategy {
         criterionId: c.id,
         criterionName: c.name,
         score: Math.min(c.maxScore, idx * 2), // deterministic scores bounded by maxScore
-        evidence: `Direct evidence for ${c.name}`,
+        evidence: `Demonstrated in TestSystem: "void run()" addressing ${c.name}`,
         concern: null,
         suggestion: null,
         confidence: 0.9,
@@ -287,7 +287,7 @@ interface ParkingStrategy {
         criterionId: c.id,
         criterionName: c.name,
         score: Math.floor(c.maxScore * 0.8),
-        evidence: `Direct evidence for ${c.name}`,
+        evidence: `Demonstrated: "Strategy pattern" in architecture addressing ${c.name}`,
         concern: `Minor concern for ${c.name}`,
         suggestion: `Actionable suggestion for ${c.name}`,
         confidence: 0.95,
@@ -389,5 +389,79 @@ interface ParkingStrategy {
       where: { submissionId: submission.id },
     });
     expect(allEvalsForSub).toHaveLength(1);
+  });
+
+  // 15. Valid direct quotation evidence
+  it('15. accepts valid direct quotation evidence matching submission', () => {
+    const groundedJson = {
+      criteria: mockCriteria.map((c) => ({
+        criterionId: c.id,
+        criterionName: c.name,
+        score: c.maxScore,
+        evidence: `Directly quotes submission: "issueTicket" and "ParkingSpot" for ${c.name}.`,
+        confidence: 0.95,
+      })),
+    };
+
+    const results = OutputValidator.validate(groundedJson, mockCriteria, sampleInput.submission.content);
+    expect(results).toHaveLength(mockCriteria.length);
+    expect(results[0].evidence).toContain('issueTicket');
+  });
+
+  // 16. Valid explicit missing/unspecified evidence
+  it('16. accepts explicit missing/unspecified evidence for omitted requirements', () => {
+    const unspecifiedJson = {
+      criteria: mockCriteria.map((c) => ({
+        criterionId: c.id,
+        criterionName: c.name,
+        score: Math.floor(c.maxScore * 0.5),
+        evidence: `The submission does not specify thread safety or lock primitives for ${c.name}.`,
+        confidence: 0.9,
+      })),
+    };
+
+    const results = OutputValidator.validate(unspecifiedJson, mockCriteria, sampleInput.submission.content);
+    expect(results).toHaveLength(mockCriteria.length);
+    expect(results[0].evidence).toContain('does not specify');
+  });
+
+  // 17. Rejects fabricated evidence
+  it('17. rejects fabricated evidence that does not exist in the submission', () => {
+    const fabricatedJson = {
+      criteria: mockCriteria.map((c) => ({
+        criterionId: c.id,
+        criterionName: c.name,
+        score: c.maxScore,
+        evidence: `Candidate configured a distributed Kafka stream and Redis cluster with ZooKeeper orchestration.`,
+        confidence: 0.9,
+      })),
+    };
+
+    expect(() =>
+      OutputValidator.validate(fabricatedJson, mockCriteria, sampleInput.submission.content)
+    ).toThrow(OutputValidationError);
+    expect(() =>
+      OutputValidator.validate(fabricatedJson, mockCriteria, sampleInput.submission.content)
+    ).toThrow(/Evidence grounding validation failed/i);
+  });
+
+  // 18. Rejects generic placeholder evidence
+  it('18. rejects generic placeholder evidence (e.g. "Evaluated submission.", "Looks good.")', () => {
+    const placeholderJson = {
+      criteria: mockCriteria.map((c) => ({
+        criterionId: c.id,
+        criterionName: c.name,
+        score: c.maxScore,
+        evidence: `Evaluated submission.`,
+        confidence: 0.9,
+      })),
+    };
+
+    expect(() =>
+      OutputValidator.validate(placeholderJson, mockCriteria, sampleInput.submission.content)
+    ).toThrow(OutputValidationError);
+    expect(() =>
+      OutputValidator.validate(placeholderJson, mockCriteria, sampleInput.submission.content)
+    ).toThrow(/Generic placeholder evidence is not permitted/i);
   });
 });

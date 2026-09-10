@@ -1,93 +1,55 @@
-# LLD Practice Platform
+# CipherSchools — Low-Level Design (LLD) Practice Platform
 
-A focused, rubric-driven Low-Level Design (LLD) practice workbench that evaluates candidate object-oriented software architectures using structured AI analysis and deterministic scoring.
-
----
-
-## Problem
-
-Software engineers preparing for Low-Level Design (LLD) interviews face a critical gap: unlike algorithmic coding (which offers instant automated judge feedback like LeetCode) or high-level system design (which focuses on macro architectural topologies), LLD requires evaluating class responsibilities, SOLID principles, design patterns, concurrency safety, and encapsulation. Existing preparation is passive (reading blog posts) or relies on subjective, non-repeatable feedback. 
-
-This platform solves this by providing interactive practice with an evidence-first, rubric-grounded evaluation engine that quotes candidate text, flags architectural vulnerabilities, and suggests concrete improvements.
+An interactive, deliberate-practice platform for mastering Low-Level Design (LLD) and Object-Oriented Design (OOD). Built for the **CipherSchools Hiring Assignment (September 2026)**.
 
 ---
 
-## Product Flow
+## The Learner Problem Solved
 
-```
-Problem Library ──► Problem Details ──► Start Attempt ──► LLD Workspace ──► Submit ──► Evaluating ──► Evaluation Result ──► Try Again
-```
+Unlike algorithmic challenges where automated test cases yield clear Pass/Fail signals, Low-Level Design is notoriously difficult to self-evaluate. Candidates sketch classes and design patterns but have no objective way of knowing whether they created god-objects, coupled interfaces prematurely, or neglected critical concurrency edge cases. Generic chatbots offer superficial, uncalibrated praise without structured rubrics or evidence grounding.
 
-1. **Problem**: Learner reviews functional requirements, constraints, and the standard 100-point rubric.
-2. **Attempt**: Learner starts an attempt (`status: IN_PROGRESS`), opening the split-pane workspace.
-3. **Submission**: Learner writes an LLD solution in Markdown (persisted to local draft) and submits.
-4. **Evaluation**: Solution is committed to PostgreSQL before triggering automated evaluation (save-before-evaluate guarantee).
-5. **Feedback**: System validates LLM structured output, calculates deterministic scores, and renders evidence-backed feedback across 7 rubric dimensions.
-6. **Try Again**: Learner iterates by launching a fresh attempt while preserving previous attempts and scores in history.
+This platform bridges that gap by providing:
+1. **Curated Problem Library**: 4 real-world systems with explicit requirements and constraints (Parking Lot, Elevator System, Vending Machine, Food Delivery App).
+2. **Standardized 100-Point Rubric**: Evaluates solutions across 7 architectural dimensions dynamically served from the database.
+3. **Evidence-Grounded Feedback**: Every score is backed by verbatim quotations from the student's submission, concrete concerns, actionable suggestions, and confidence ratings.
+4. **Save-Before-Evaluate Reliability**: Submissions are committed to PostgreSQL *before* calling the evaluator, guaranteeing student work is never lost on network or model failures.
+5. **Measurable Improvement Loop**: Attempts are immutable records. When learners retry, previous attempts are preserved, and score trajectory badges (`+15 pts`, `-5 pts`, `Baseline`) highlight progress.
 
 ---
 
-## Key Engineering Decisions
+## Architectural Highlights
 
-- **Service Layer Pattern**: Thin REST controllers only parse HTTP parameters and delegate to domain services. Business rules and state transitions remain strictly decoupled from Express.
-- **Evaluator Abstraction (`Evaluator` Interface)**: The core grading workflow interacts with an `Evaluator` interface rather than directly binding to specific LLM vendor SDKs. This allows plugging in Gemini, OpenAI, rule-based heuristics, or human grading with zero changes to service logic.
-- **Structured LLM Output & Strict Validation**: The LLM must output clean JSON matching a strict Zod schema. The backend asserts that all 7 active rubric criteria are present, rejects unknown or duplicate criteria, enforces $[0, \text{maxScore}]$ bounds, and strips markdown wrappers.
-- **Deterministic Scoring**: The model is **never** permitted to calculate the total score. The backend derives $\text{totalScore} = \sum \text{criterionScores}$. This prevents hallucinated math and maintains mathematical consistency.
-- **Evaluation State Machine & Synchronous Execution**: Evaluations follow explicit states (`PENDING` $\rightarrow$ `EVALUATING` $\rightarrow$ `COMPLETED` / `FAILED`). The state machine is architecturally designed to support asynchronous background execution (e.g. BullMQ/Redis), while the current MVP executes evaluation synchronously within the evaluation request and persists intermediate states to PostgreSQL for transparent failure and in-place retry handling. Completed evaluations are immutable.
-- **Learner Retry vs Evaluation Retry**:
-  - **Learner Retry ("Try Again")**: Creates a brand new `Attempt` record, leaving prior attempts and evaluations completely intact in the historical timeline.
-  - **Evaluation Retry**: Used exclusively for transient model/network failures; transitions `FAILED` $\rightarrow$ `EVALUATING` in-place on the same `Evaluation` row and re-executes grading without duplicating database records.
 - **Relational Integrity via PostgreSQL & Prisma**: Strictly enforces 1:1 Attempt-to-Submission and 1:1 Submission-to-Evaluation relationships via database-level `UNIQUE` constraints and foreign keys.
+- **Save-Before-Evaluate Guarantee**: Submissions are durably stored in PostgreSQL before the evaluation begins. If the evaluator fails, the submission is never lost and evaluation can be retried in-place.
+- **Vendor-Agnostic Evaluator Abstraction**: Implements an `Evaluator` domain contract supporting `GeminiProvider` (`gemini-2.0-flash`), `OpenAIProvider` (`gpt-4o-mini`), and `MockLLMProvider` (for deterministic offline testing).
+- **Zod Output Validation & Grounding Engine**: Rejects hallucinated criteria, ungrounded placeholder evidence, duplicate keys, and arithmetic errors. Deterministically computes total scores on the server.
+- **Concurrent Safe Execution**: Server-level concurrency control prevents race conditions on duplicate evaluation requests.
 
 ---
 
 ## Tech Stack
 
-- **Frontend**: React 19, TypeScript, React Router v7, Vite 8, Vanilla CSS (Dark Workbench design system).
-- **Backend**: Node.js, Express 4, TypeScript, Zod.
-- **Database**: PostgreSQL with Prisma ORM.
-- **AI / Evaluation**: Google Gemini (configurable via `GEMINI_MODEL`, default: `gemini-3.6-flash`) via structured `Evaluator` abstraction; offline `MockLLMProvider` for deterministic testing.
-- **Testing**: Vitest integration and domain test suite.
+- **Frontend**: React 19, TypeScript, React Router v7, Vite 8, Vitest, Testing Library, Vanilla CSS (Dark Workbench design system).
+- **Backend**: Node.js, Express 4, TypeScript, Prisma ORM, Zod, Vitest.
+- **Database**: PostgreSQL (Prisma Client).
+- **AI / Evaluation**: Google Gemini (configurable via `GEMINI_MODEL`, default: `gemini-2.0-flash`) via structured `Evaluator` abstraction; OpenAI (`gpt-4o-mini`); offline `MockLLMProvider` for deterministic testing.
+- **Testing**: 70 automated tests (61 backend unit/domain/api tests + 9 frontend component/flow tests).
 
 ---
 
-## Project Structure
+## Directory & Command Map
 
-```
-CipherSchools/
-├── README.md                      # Project overview, setup, and architecture summary
-├── RESEARCH_NOTE.md               # Research note: learner problem, market analysis, identified gaps
-├── DESIGN_NOTE.md                 # System architecture & low-level design document
-├── AI_USAGE.md                    # Transparent audit of AI-assisted engineering decisions
-├── docs/
-│   ├── ARCHITECTURE.md            # Deep system architecture & sequence diagrams
-│   ├── API.md                     # REST API specification & schemas
-│   └── LLM-EVALUATOR.md           # Prompt engineering, validation & retry architecture
-├── backend/
-│   ├── prisma/
-│   │   ├── schema.prisma          # Relational models (Problem, Attempt, Submission, Evaluation, Feedback, Rubric)
-│   │   └── seed.ts                # 4 core LLD problems + 100-point rubric
-│   ├── src/
-│   │   ├── app.ts                 # Express app configuration & middleware
-│   │   ├── domain/                # Pure types and Evaluator domain contract
-│   │   ├── evaluators/            # LLMEvaluator, PromptBuilder, OutputValidator, Providers
-│   │   ├── services/              # Domain logic (Attempt, Submission, Evaluation, Problem, Rubric)
-│   │   ├── controllers/           # HTTP controllers
-│   │   └── routes/                # Express router mounts
-│   └── tests/                     # 5 test suites (domain, api, flow, llm, problems)
-└── frontend/
-    ├── src/
-    │   ├── api/                   # API client bindings
-    │   ├── components/            # UI components (ProblemCard, ScoreDisplay, FeedbackCard, AttemptHistory)
-    │   ├── pages/                 # ProblemLibrary, ProblemDetail, AttemptWorkspace, EvaluationResult
-    │   ├── types/                 # Frontend TypeScript interfaces
-    │   └── App.tsx                # Client-side router & navbar
-    └── vite.config.ts             # Dev proxy configuration (:3001)
-```
+Every command in this repository must be executed from its specific directory:
+
+| Directory | Purpose | Allowed Commands |
+|---|---|---|
+| `backend/` | Express API, Prisma ORM, Evaluator services, Domain logic | `npm install`, `npx prisma generate`, `npx prisma migrate dev`, `npm run db:seed`, `npm test`, `npx tsc --noEmit`, `npm run dev` |
+| `frontend/` | React single-page application, Dark Workbench UI, Vitest | `npm install`, `npm test`, `npm run build`, `npm run lint`, `npm run dev` |
+| Repository Root | Documentation, architectural notes, research briefs | Git operations, viewing documentation |
 
 ---
 
-## Local Setup
+## Local Setup & Clean-Install Guide
 
 ### Prerequisites
 - **Node.js**: v20+ or v22+
@@ -97,117 +59,151 @@ CipherSchools/
 Create the database:
 ```bash
 createdb lld_practice
-# or: psql -U postgres -c "CREATE DATABASE lld_practice;"
+# or using psql:
+# psql -U postgres -c "CREATE DATABASE lld_practice;"
 ```
 
 ### 2. Backend Setup
+From the repository root:
 ```bash
 cd backend
 npm install
 cp .env.example .env
 ```
 
-Configure `backend/.env` with your PostgreSQL connection and Gemini API key:
+Configure `backend/.env` with your PostgreSQL connection:
 ```env
 PORT=3001
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/lld_practice?schema=public"
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-3.6-flash
+
+# For offline testing or local evaluation without API keys:
+LLM_PROVIDER=mock
+
+# For live evaluations with Google Gemini:
+# LLM_PROVIDER=gemini
+# GEMINI_API_KEY=your_gemini_api_key_here
+# GEMINI_MODEL=gemini-2.0-flash
+
+# For live evaluations with OpenAI:
+# LLM_PROVIDER=openai
+# OPENAI_API_KEY=your_openai_api_key_here
+# OPENAI_MODEL=gpt-4o-mini
 ```
 
-Run database migrations and seed the 4 core problems:
+Run database migrations, generate Prisma Client, and seed the 4 core problems:
 ```bash
 npx prisma migrate dev
 npm run db:seed
 ```
 
-Start the backend server:
+Run backend automated tests (100% offline with MockLLMProvider):
+```bash
+npm test
+```
+
+Start the backend API server:
 ```bash
 npm run dev
 ```
-The API server starts on `http://localhost:3001`. Verify with `curl http://localhost:3001/api/health`.
+The backend starts on `http://localhost:3001`. Verify with `curl http://localhost:3001/api/health`.
 
 ### 3. Frontend Setup
-In a second terminal window:
+In a separate terminal window:
 ```bash
 cd frontend
 npm install
+npm test
 npm run dev
 ```
 Open `http://localhost:5173` in your browser.
 
 ---
 
+## Reviewer Demo Walkthrough
+
+Follow this step-by-step path to experience the complete practice loop:
+
+1. **Problem Library**: Navigate to `http://localhost:5173`. Browse the 4 curated LLD problems (Parking Lot, Elevator System, Vending Machine, Food Delivery). Note difficulty tags and requirement counts.
+2. **Problem Detail**: Click on **"Practice →"** on *Design a Parking Lot*. Read the explicit requirements (spots, vehicle types, ticketing, concurrency) and system constraints.
+3. **Start Attempt**: Click **"Start Practice Attempt →"**. Notice the structured starter template with sections for Requirements, Domain Entities, Design Patterns, Sequences, Extensibility, and Edge Cases.
+4. **Dynamic Rubric**: Observe the right-hand panel displaying the 7 evaluation dimensions dynamically loaded from the backend (`GET /api/rubric`) totaling 100 points.
+5. **Submit Solution**: Write or refine your solution and click **"Submit Design for Evaluation →"**.
+6. **Save-Before-Evaluate & Evaluation**: The submission is committed atomically before evaluation begins. The evaluator assesses the solution and renders:
+   - Overall score out of 100 (deterministically aggregated).
+   - 7 criterion cards with verbatim quotes of evidence, identified architectural concerns, actionable recommendations, and evaluator confidence.
+7. **Iterative Refinement (Try Again)**:
+   - Click **"Try Again (Start New Attempt) →"**.
+   - Attempt #1 is permanently archived.
+   - Enter an improved solution (e.g. adding a `PaymentStrategy` or `SpotAllocationStrategy`).
+   - Submit again: View the updated Attempt History showing Attempt #1 vs. Attempt #2 with comparative score badges (`+15 pts`).
+
+---
+
 ## Environment Variables
 
-| Variable | Required | Description | Default / Example |
-|---|---|---|---|
-| `PORT` | No | Backend HTTP port | `3001` |
-| `DATABASE_URL` | Yes | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/lld_practice` |
-| `LLM_PROVIDER` | No | Active evaluation provider (`gemini`, `openai`, `mock`) | `gemini` |
-| `GEMINI_API_KEY` | Conditional | Google Gemini API key (required for live Gemini evaluations) | `AIzaSy...` |
-| `GEMINI_MODEL` | No | Gemini model identifier | `gemini-3.6-flash` |
-| `OPENAI_API_KEY` | Conditional | OpenAI API key (if using OpenAI provider) | `sk-...` |
-| `VITE_API_BASE_URL` | No | Optional custom API origin for frontend production | `/api` |
+| Variable | Directory | Required | Description | Default / Example |
+|---|---|---|---|---|
+| `PORT` | `backend/` | No | Backend HTTP port | `3001` |
+| `DATABASE_URL` | `backend/` | Yes | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/lld_practice` |
+| `LLM_PROVIDER` | `backend/` | No | Evaluation provider (`mock`, `gemini`, `openai`) | `mock` (tests) / `gemini` (live) |
+| `GEMINI_API_KEY` | `backend/` | Conditional | Google Gemini API key (required if `LLM_PROVIDER=gemini`) | `AIzaSy...` |
+| `GEMINI_MODEL` | `backend/` | No | Gemini model identifier | `gemini-2.0-flash` |
+| `OPENAI_API_KEY` | `backend/` | Conditional | OpenAI API key (required if `LLM_PROVIDER=openai`) | `sk-...` |
+| `OPENAI_MODEL` | `backend/` | No | OpenAI model identifier | `gpt-4o-mini` |
+| `VITE_API_BASE_URL` | `frontend/`| No | Optional API base URL for production proxy | `/api` |
 
 ---
 
-## API Reference
+## Testing & Quality Verification
 
-Complete endpoint specifications, request payloads, and status codes are documented in [`docs/API.md`](./docs/API.md).
+All automated tests run completely offline without external network or LLM API calls using `MockLLMProvider`.
 
-Key endpoints:
-- `GET /api/problems`: List all curated problems
-- `GET /api/problems/:id`: Problem specifications, requirements, and constraints
-- `GET /api/problems/:id/attempts`: Past attempt history for the problem
-- `POST /api/problems/:id/attempts`: Start a fresh attempt
-- `POST /api/attempts/:id/submission`: Submit solution content
-- `POST /api/submissions/:id/evaluation`: Trigger evaluation
-- `GET /api/evaluations/:id`: Retrieve evaluation score and 7-dimension feedback
-- `POST /api/evaluations/:id/retry`: In-place retry for failed evaluations
-
----
-
-## Evaluation Architecture
-
-For deep architectural details on the evaluation engine, prompt engineering, anti-hallucination rules, and validation checks, see [`docs/LLM-EVALUATOR.md`](./docs/LLM-EVALUATOR.md).
-
----
-
-## Testing
-
-The platform features an automated Vitest test suite that runs 100% offline using `MockLLMProvider`:
-
+### Backend Test Suite (61 tests):
 ```bash
-cd backend
-npm test
+cd backend && npm test
 ```
-
-### Verified Test Results:
 ```
- ✓ tests/llm.evaluator.test.ts   (14 tests)
- ✓ tests/learner.flow.test.ts     (8 tests)
- ✓ tests/domain.test.ts          (11 tests)
- ✓ tests/api.test.ts             (16 tests)
- ✓ tests/problems.audit.test.ts   (6 tests)
+ ✓ tests/llm.evaluator.test.ts   (18 tests) - Evidence grounding, prompt builder, retry, sanitization
+ ✓ tests/api.test.ts             (18 tests) - REST endpoints, retry, concurrency, rubric consistency
+ ✓ tests/domain.test.ts          (11 tests) - Domain constraints, 1:1 invariants, state machine
+ ✓ tests/learner.flow.test.ts     (8 tests) - End-to-end learner practice cycle
+ ✓ tests/problems.audit.test.ts   (6 tests) - All 4 seeded problems evaluated end-to-end
 
  Test Files  5 passed (5)
-      Tests  55 passed (55)
-   Duration  360ms
+      Tests  61 passed (61)
 ```
 
-To run TypeScript verification:
+### Frontend Test Suite (9 tests):
+```bash
+cd frontend && npm test
+```
+```
+ ✓ src/__tests__/frontend.test.tsx (9 tests) - Problem library, error states, attempt history, score display, feedback cards, evaluation state, retry, try-again
+```
+
+### TypeScript & Production Build Verification:
 ```bash
 cd backend && npx tsc --noEmit
 cd frontend && npm run build
 ```
+Both commands complete with 0 errors and 0 warnings.
 
 ---
 
-## Limitations & Future Improvements
+## Known Limitations & Intentional Trade-Offs
 
-- **Single-File Markdown Submissions**: Solutions are currently submitted as a single Markdown document containing entity models, design patterns, and code snippets. A future version could support multi-file tabbed IDE editors.
-- **Asynchronous Message Queue**: For extreme traffic spikes, moving from HTTP polling to a Redis/BullMQ background worker queue would decouple evaluation execution from HTTP request threads.
-- **Diagram Rendering**: While candidates can provide ASCII or Mermaid text in Markdown, interactive visual UML class diagramming (e.g. drag-and-drop relationship canvas) would enhance visual learning.
-- **Automated Rubric Calibration**: Adding a calibration benchmark suite with synthetic human-graded submissions to continuously measure evaluator scoring variance across model versions.
+- **No Authentication**: The platform is intentionally structured as an open, focused single-user learner workbench. Excluding user authentication, session cookies, and login flows was a deliberate product decision to focus engineering effort on domain modeling, deterministic evaluation, and iterative feedback quality.
+- **Text-First Submissions**: Solutions are submitted as structured Markdown text. While text captures class responsibilities, interfaces, patterns, and trade-offs, interactive drag-and-drop UML drawing is left as future work (see Change Test A).
+- **PostgreSQL Dependency**: Relational integrity and atomic transactions rely on PostgreSQL.
+- **Synchronous Evaluation Orchestration**: Evaluations are executed synchronously on the backend HTTP thread with concurrency-safe locking. For extreme scale, an asynchronous queue (e.g. BullMQ / Redis) can be adopted without database schema migrations.
+- **No Human Reviewer in Prototype**: While the system currently routes to `LLMEvaluator`, the `Evaluator` interface is completely decoupled to support `HumanEvaluator` or `RuleBasedEvaluator` (see Change Test B).
+
+---
+
+## Documentation Links
+
+- [Research Note](./RESEARCH_NOTE.md) — Learner problem, market analysis, observed facts vs. assumptions.
+- [Design Note](./DESIGN_NOTE.md) — System architecture, domain invariants, and state machine.
+- [AI Usage Note](./AI_USAGE.md) — 5 critical engineering decisions and trade-offs.
+- [API Specification](./docs/API.md) — Complete REST endpoint schemas and payload examples.
+- [LLM Evaluator Architecture](./docs/LLM-EVALUATOR.md) — Prompt engineering, evidence grounding, and provider abstraction.

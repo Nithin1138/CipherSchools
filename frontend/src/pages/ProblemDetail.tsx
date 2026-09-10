@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { problemsApi, attemptsApi } from '../api/index.js';
 import type { Problem, Rubric, AttemptHistoryItem } from '../types/index.js';
@@ -18,41 +18,67 @@ export const ProblemDetail: React.FC = () => {
   const [startingAttempt, setStartingAttempt] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'STATEMENT' | 'RUBRIC' | 'HISTORY'>('STATEMENT');
-
-  const fetchProblemData = async () => {
+  const fetchProblemData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
     try {
-      const [prob, rub] = await Promise.all([
+      const [prob, rub, attList] = await Promise.all([
         problemsApi.getProblem(id),
         problemsApi.getDefaultRubric(),
+        problemsApi.getProblemAttempts(id).catch(() => []),
       ]);
       setProblem(prob);
       setRubric(rub);
+      setAttempts(attList);
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to load problem details.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchAttempts = async () => {
-    if (!id) return;
-    setLoadingAttempts(true);
-    try {
-      const list = await problemsApi.getProblemAttempts(id);
-      setAttempts(list);
-    } catch {
-      // Non-fatal if attempts fail
-    } finally {
       setLoadingAttempts(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchProblemData();
-    fetchAttempts();
+    let active = true;
+    async function load() {
+      if (!id) return;
+      try {
+        const [prob, rub] = await Promise.all([
+          problemsApi.getProblem(id),
+          problemsApi.getDefaultRubric(),
+        ]);
+        if (active) {
+          setProblem(prob);
+          setRubric(rub);
+        }
+      } catch (err: unknown) {
+        if (active) {
+          setError((err as Error).message || 'Failed to load problem details.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+
+      try {
+        const list = await problemsApi.getProblemAttempts(id);
+        if (active) {
+          setAttempts(list);
+        }
+      } catch {
+        // Non-fatal if attempts fail
+      } finally {
+        if (active) {
+          setLoadingAttempts(false);
+        }
+      }
+    }
+    load();
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   const handleStartAttempt = async () => {

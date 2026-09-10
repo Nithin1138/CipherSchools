@@ -281,6 +281,37 @@ describe('LLD Practice Platform - REST API Integration Tests', () => {
       expect(Array.isArray(dataRetry.evaluation.feedback)).toBe(true);
       expect(dataRetry.evaluation.feedback.length).toBe(7); // All 7 canonical criteria persisted
     });
+
+    it('POST /api/submissions/:submissionId/evaluation handles concurrent evaluation triggers safely, executing only one evaluation', async () => {
+      // Create a fresh attempt and submission
+      const resAttempt = await fetch(`${baseUrl}/api/problems/${parkingLotId}/attempts`, { method: 'POST' });
+      const { attempt } = (await resAttempt.json()) as any;
+
+      const resSub = await fetch(`${baseUrl}/api/attempts/${attempt.id}/submission`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: 'Concurrent evaluation test: Valid design with ParkingLot and Ticket issuing.' }),
+      });
+      const { submission } = (await resSub.json()) as any;
+
+      // Fire 3 simultaneous evaluation requests for the exact same submission
+      const [res1, res2, res3] = await Promise.all([
+        fetch(`${baseUrl}/api/submissions/${submission.id}/evaluation`, { method: 'POST' }),
+        fetch(`${baseUrl}/api/submissions/${submission.id}/evaluation`, { method: 'POST' }),
+        fetch(`${baseUrl}/api/submissions/${submission.id}/evaluation`, { method: 'POST' }),
+      ]);
+
+      // All requests should return successful status codes (either 201 Created or 200 OK)
+      expect([200, 201]).toContain(res1.status);
+      expect([200, 201]).toContain(res2.status);
+      expect([200, 201]).toContain(res3.status);
+
+      // Verify that strictly 1 evaluation row exists in the database
+      const dbEvals = await prisma.evaluation.findMany({
+        where: { submissionId: submission.id },
+      });
+      expect(dbEvals).toHaveLength(1);
+    });
   });
 
   describe('5. Learner Retry End-to-End Cycle', () => {
@@ -325,6 +356,28 @@ describe('LLD Practice Platform - REST API Integration Tests', () => {
       await prisma.evaluation.deleteMany({ where: { id: { in: [eval1.id] } } });
       await prisma.submission.deleteMany({ where: { id: { in: [sub1.id, sub2.id] } } });
       await prisma.attempt.deleteMany({ where: { id: { in: [attempt1.id, attempt2.id] } } });
+    });
+  });
+
+  describe('6. Rubric Dynamic Consistency Endpoints', () => {
+    it('GET /api/rubric returns the active default rubric with all 7 criteria totaling 100 points', async () => {
+      const res = await fetch(`${baseUrl}/api/rubric`);
+      expect(res.status).toBe(200);
+
+      const data = (await res.json()) as any;
+      expect(data.rubric).toBeDefined();
+      expect(data.rubric.isDefault).toBe(true);
+      expect(Array.isArray(data.rubric.criteria)).toBe(true);
+      expect(data.rubric.criteria).toHaveLength(7);
+
+      const totalMaxScore = data.rubric.criteria.reduce((sum: number, c: any) => sum + c.maxScore, 0);
+      expect(totalMaxScore).toBe(100);
+
+      // Verify criteria order and structure
+      for (let i = 0; i < data.rubric.criteria.length; i++) {
+        expect(data.rubric.criteria[i].orderIndex).toBe(i + 1);
+        expect(data.rubric.criteria[i].maxScore).toBeGreaterThan(0);
+      }
     });
   });
 });

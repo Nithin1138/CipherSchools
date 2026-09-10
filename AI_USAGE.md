@@ -1,6 +1,6 @@
 # AI Usage & Engineering Decisions
 
-In accordance with the assignment brief, this document outlines 4 meaningful decisions where AI assistance was utilized, critically evaluated, and either accepted, rejected, or modified using engineering judgment.
+In accordance with the assignment brief, this document outlines 5 meaningful engineering decisions where AI assistance was utilized, critically evaluated, and either accepted, rejected, or modified using senior engineering judgment.
 
 ---
 
@@ -59,4 +59,20 @@ In accordance with the assignment brief, this document outlines 4 meaningful dec
     evaluate(input: EvaluationInput): Promise<EvaluationResult>;
   }
   ```
-  `LLMEvaluator` implements this contract. The service layer interacts solely with the abstraction. We added a deterministic MockLLMProvider so the evaluation pipeline can be tested offline without external API calls.
+  `LLMEvaluator` implements this contract. The service layer interacts solely with the abstraction. We added a deterministic `MockLLMProvider` so the evaluation pipeline can be tested offline without external API calls.
+
+---
+
+### Decision 5: Direct LLM JSON Trust vs. Strict Zod Schema & Evidence Grounding
+
+- **What AI Suggested**:
+  Relying on basic `JSON.parse(llmOutput)` and persisting the payload directly, trusting the LLM to compute the `totalScore`, match criterion IDs, and validate that its cited evidence is accurate.
+- **What Was Accepted / Rejected**:
+  **Rejected direct trust; implemented multi-stage runtime validation.**
+- **Why**:
+  LLMs frequently suffer from arithmetic hallucination (e.g., criterion sub-scores sum to 81, but the LLM states `totalScore: 89`), criterion omission or duplication, and evidence fabrication (quoting concepts or patterns the candidate never mentioned, or providing vague generic feedback like "Looks good").
+- **What Was Modified & Implemented**:
+  We built a dedicated `OutputValidator` powered by Zod and an evidence-grounding engine:
+  1. **Schema Validation**: Validates the presence of all 7 rubric criteria, enforces numerical ranges ($0 \le \text{score} \le \text{maxScore}$), and rejects unknown or duplicate criterion IDs.
+  2. **Evidence Grounding Verification**: Enforces that each criterion's cited evidence either directly quotes phrases/tokens present in the candidate's submission text or explicitly documents an omission (using markers such as `"not specified"`, `"missing"`, or `"does not mention"`). Rejects generic placeholders and fabricated quotes.
+  3. **Deterministic Aggregation**: Ignores any LLM-reported `totalScore` and deterministically computes `totalScore = sum(criterionScores)` on the backend.
