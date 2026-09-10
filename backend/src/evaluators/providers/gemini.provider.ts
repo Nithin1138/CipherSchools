@@ -9,6 +9,11 @@ const DEPRECATED_MODELS = new Set([
   'gemini-2.0-pro-exp-02-05',
 ]);
 
+const FALLBACK_CANDIDATES: Record<string, string> = {
+  'gemini-3.6-flash': 'gemini-3.6-pro',
+  'gemini-3.6-pro': 'gemini-3.6-flash',
+};
+
 export class GeminiProvider implements LLMProvider {
   readonly name = 'gemini';
   readonly modelName: string;
@@ -25,11 +30,36 @@ export class GeminiProvider implements LLMProvider {
   }
 
   async generateStructuredResponse(prompt: PromptPayload, options?: ProviderOptions): Promise<string> {
+    try {
+      return await this.executeModelRequest(this.modelName, prompt, options);
+    } catch (primaryErr: any) {
+      const fallbackModel = FALLBACK_CANDIDATES[this.modelName];
+      const isTransient = /high demand|overloaded|429|503|resource has been exhausted|rate limit/i.test(primaryErr.message || '');
+
+      if (fallbackModel && isTransient) {
+        console.warn(
+          `[GeminiProvider] Primary model ${this.modelName} unavailable (${primaryErr.message}). Cascading to fallback model ${fallbackModel}...`
+        );
+        try {
+          return await this.executeModelRequest(fallbackModel, prompt, options);
+        } catch (fallbackErr: any) {
+          console.error(`[GeminiProvider] Fallback model ${fallbackModel} also failed: ${fallbackErr.message}`);
+          throw new Error(
+            `Gemini servers are experiencing high demand across models (${this.modelName} & ${fallbackModel}). Your design submission is saved safely. Please click 'Retry Evaluation' in a few moments.`
+          );
+        }
+      }
+
+      throw primaryErr;
+    }
+  }
+
+  private async executeModelRequest(model: string, prompt: PromptPayload, options?: ProviderOptions): Promise<string> {
     const timeoutMs = options?.timeoutMs ?? 35000;
     const temperature = options?.temperature ?? 0.2;
     const maxRetries = 3;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
 
     let lastError: Error | null = null;
 
@@ -81,16 +111,14 @@ export class GeminiProvider implements LLMProvider {
           if (isTransient && attempt < maxRetries) {
             const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1) + Math.random() * 600, 5000);
             console.warn(
-              `[GeminiProvider] High demand / transient error (${response.status}: ${errSnippet}). Retrying in ${Math.round(backoffMs)}ms (attempt ${attempt}/${maxRetries})...`
+              `[GeminiProvider] High demand / transient error on ${model} (${response.status}: ${errSnippet}). Retrying in ${Math.round(backoffMs)}ms (attempt ${attempt}/${maxRetries})...`
             );
             await new Promise((resolve) => setTimeout(resolve, backoffMs));
             continue;
           }
 
           if (response.status === 429 || response.status === 503) {
-            throw new Error(
-              `Gemini API is currently experiencing peak high demand (${response.status}: ${errSnippet}). Please click 'Retry Evaluation' in a few seconds.`
-            );
+            throw new Error(`Gemini API high demand on ${model} (${response.status}: ${errSnippet})`);
           }
           throw new Error(`Gemini API returned error ${response.status}: ${errSnippet}`);
         }
@@ -105,15 +133,14 @@ export class GeminiProvider implements LLMProvider {
         return text.trim();
       } catch (err: unknown) {
         if ((err as Error).name === 'AbortError' || controller.signal.aborted) {
-          lastError = new Error(`Gemini API request timed out after ${timeoutMs}ms`);
+          lastError = new Error(`Gemini API request for ${model} timed out after ${timeoutMs}ms`);
         } else {
           lastError = err as Error;
         }
 
-        // If it's a network drop / timeout and we have attempts remaining, retry
         if (attempt < maxRetries && (lastError.message.includes('fetch failed') || lastError.message.includes('timed out'))) {
           const backoffMs = 1200 * attempt;
-          console.warn(`[GeminiProvider] Network/timeout error. Retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})...`);
+          console.warn(`[GeminiProvider] Network/timeout on ${model}. Retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})...`);
           await new Promise((resolve) => setTimeout(resolve, backoffMs));
           continue;
         }
@@ -124,6 +151,6 @@ export class GeminiProvider implements LLMProvider {
       }
     }
 
-    throw lastError || new Error('Gemini evaluation request failed after retries.');
+    throw lastError || new Error(`Gemini evaluation request for ${model} failed after retries.`);
   }
 }
