@@ -122,14 +122,21 @@ export const EvaluationResult: React.FC = () => {
   }, [submissionId, startPolling, clearPolling]);
 
   const handleRetryEvaluation = async () => {
-    if (!evaluation) return;
     setRetrying(true);
     setError(null);
     try {
-      const retried = await evaluationsApi.retryEvaluation(evaluation.id);
-      setEvaluation(retried);
-      if (retried.status === 'EVALUATING' || retried.status === 'PENDING') {
-        startPolling(retried.id);
+      if (evaluation) {
+        const retried = await evaluationsApi.retryEvaluation(evaluation.id);
+        setEvaluation(retried);
+        if (retried.status === 'EVALUATING' || retried.status === 'PENDING') {
+          startPolling(retried.id);
+        }
+      } else if (submissionId) {
+        const evalData = await evaluationsApi.triggerEvaluation(submissionId);
+        setEvaluation(evalData);
+        if (evalData.status === 'EVALUATING' || evalData.status === 'PENDING') {
+          startPolling(evalData.id);
+        }
       }
     } catch (err: unknown) {
       setError((err as Error).message || 'Retry failed.');
@@ -174,8 +181,8 @@ export const EvaluationResult: React.FC = () => {
   }
 
   const isEvaluating = evaluation?.status === 'EVALUATING' || evaluation?.status === 'PENDING';
-  const isFailed = evaluation?.status === 'FAILED';
   const isCompleted = evaluation?.status === 'COMPLETED';
+  const isFailed = evaluation?.status === 'FAILED' || (Boolean(error) && !isCompleted && !isEvaluating);
   const feedbackList = evaluation?.feedback || [];
 
   return (
@@ -197,7 +204,7 @@ export const EvaluationResult: React.FC = () => {
         </div>
       </div>
 
-      {error && (
+      {error && !isFailed && (
         <div className="result-error-banner" role="alert">
           <span>{error}</span>
           <button type="button" onClick={() => setError(null)}>&times;</button>
@@ -222,13 +229,13 @@ export const EvaluationResult: React.FC = () => {
         </div>
       )}
 
-      {/* Failed Evaluation State */}
+      {/* Failed Evaluation State Card */}
       {isFailed && (
         <div className="evaluation-failed-card" role="alert">
           <div className="failed-icon">!</div>
           <h3 className="failed-title">Evaluation Failed</h3>
           <p className="failed-description">
-            {evaluation?.errorMessage || 'An error occurred while evaluating your submission with the upstream model.'}
+            {evaluation?.errorMessage || error || 'An error occurred while evaluating your submission with the upstream model.'}
           </p>
           <p className="failed-note">
             Your design submission is safely stored and was not lost. You can retry evaluation in-place.
