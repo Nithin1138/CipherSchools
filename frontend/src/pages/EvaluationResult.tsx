@@ -69,6 +69,14 @@ export const EvaluationResult: React.FC = () => {
             startPolling(evalData.id);
           }
         } catch (evalErr: unknown) {
+          try {
+            const updatedSub = await submissionsApi.getSubmission(submissionId);
+            if (updatedSub.evaluation) {
+              setEvaluation(updatedSub.evaluation);
+            }
+          } catch {
+            // ignore
+          }
           setError((evalErr as Error).message || 'Failed to trigger evaluation.');
         }
       }
@@ -104,6 +112,15 @@ export const EvaluationResult: React.FC = () => {
               startPolling(evalData.id);
             }
           } catch (evalErr: unknown) {
+            if (!active) return;
+            try {
+              const updatedSub = await submissionsApi.getSubmission(submissionId);
+              if (active && updatedSub.evaluation) {
+                setEvaluation(updatedSub.evaluation);
+              }
+            } catch {
+              // ignore
+            }
             if (active) setError((evalErr as Error).message || 'Failed to trigger evaluation.');
           }
         }
@@ -125,8 +142,21 @@ export const EvaluationResult: React.FC = () => {
     setRetrying(true);
     setError(null);
     try {
-      if (evaluation) {
-        const retried = await evaluationsApi.retryEvaluation(evaluation.id);
+      let targetEvalId = evaluation?.id;
+      if (!targetEvalId && submissionId) {
+        try {
+          const updatedSub = await submissionsApi.getSubmission(submissionId);
+          if (updatedSub.evaluation) {
+            setEvaluation(updatedSub.evaluation);
+            targetEvalId = updatedSub.evaluation.id;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (targetEvalId) {
+        const retried = await evaluationsApi.retryEvaluation(targetEvalId);
         setEvaluation(retried);
         if (retried.status === 'EVALUATING' || retried.status === 'PENDING') {
           startPolling(retried.id);
@@ -139,6 +169,16 @@ export const EvaluationResult: React.FC = () => {
         }
       }
     } catch (err: unknown) {
+      try {
+        if (submissionId) {
+          const updatedSub = await submissionsApi.getSubmission(submissionId);
+          if (updatedSub.evaluation) {
+            setEvaluation(updatedSub.evaluation);
+          }
+        }
+      } catch {
+        // ignore
+      }
       setError((err as Error).message || 'Retry failed.');
     } finally {
       setRetrying(false);
@@ -204,7 +244,8 @@ export const EvaluationResult: React.FC = () => {
         </div>
       </div>
 
-      {error && !isFailed && (
+      {/* Display error banner ONLY if evaluation is already completed (e.g. background action error) */}
+      {error && isCompleted && (
         <div className="result-error-banner" role="alert">
           <span>{error}</span>
           <button type="button" onClick={() => setError(null)}>&times;</button>

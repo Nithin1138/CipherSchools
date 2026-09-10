@@ -71,6 +71,23 @@ export class LLMEvaluator implements Evaluator {
       // 3. Parse JSON safely (handling markdown code wrappers)
       const parsedJson = OutputValidator.parseJsonString(rawResponse);
 
+      // In live production evaluation (non-mock provider), deduplicate accidental repeated criterionId entries
+      // from upstream LLM completions so minor duplicate completions do not fail candidate evaluations
+      if (provider.name !== 'mock' && parsedJson && Array.isArray((parsedJson as any).criteria)) {
+        const seenIds = new Set<string>();
+        (parsedJson as any).criteria = (parsedJson as any).criteria.filter((item: any) => {
+          if (!item || typeof item.criterionId !== 'string') return true;
+          if (seenIds.has(item.criterionId)) {
+            console.warn(
+              `[LLMEvaluator] Upstream model returned duplicate criterionId "${item.criterionId}". Deduplicating to preserve candidate evaluation.`
+            );
+            return false;
+          }
+          seenIds.add(item.criterionId);
+          return true;
+        });
+      }
+
       // 4. Validate output schema, criterion IDs, score boundaries, confidence, and evidence grounding
       const criterionResults = OutputValidator.validate(parsedJson, input.criteria, input.submission.content);
 

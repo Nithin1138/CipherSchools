@@ -116,8 +116,11 @@ Return a single JSON object with a "criteria" array containing an entry for EVER
 }
 
 REMEMBER:
-- Every criterionId in the rubric must appear exactly once in the "criteria" list.
+- The "criteria" array must contain EXACTLY ${criteria.length} objects — one for each of the rubric criteria above.
+- Each of the following ${criteria.length} criterionId values must appear once and ONLY once in the array (do not duplicate or omit any):
+${criteria.map((c) => `  * "${c.id}" (${c.name})`).join('\n')}
+- Duplicating any criterionId or omitting any criterionId will fail validation.
 - score must be an integer between 0 and that criterion's maxScore.
-- Return ONLY the JSON object.`;
+- Return ONLY the valid JSON object.`;
   }
 }
