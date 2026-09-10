@@ -126,23 +126,23 @@ export class OutputValidator {
     // 3. Check for quoted substrings in evidence: "...", '...', or `...`
     const quoteRegex = /["'`“‘]([^"'`”’]{3,})["'`”’]/g;
     let quoteMatch: RegExpExecArray | null;
-    let foundQuotes = false;
-    let anyQuoteMatched = false;
 
     while ((quoteMatch = quoteRegex.exec(trimmed)) !== null) {
-      foundQuotes = true;
       const quotedSnippet = quoteMatch[1].trim().toLowerCase();
+      // Direct exact match
       if (lowerSubmission.includes(quotedSnippet)) {
-        anyQuoteMatched = true;
-        break;
-      }
-    }
-
-    if (foundQuotes) {
-      if (anyQuoteMatched) {
         return { valid: true };
       }
-      return { valid: false, reason: 'Quoted evidence was not found in the candidate submission' };
+
+      // Handle quotes with ellipses (e.g. "part A... part B" or "part A… part B")
+      const subparts = quotedSnippet
+        .split(/\.{2,}|…/)
+        .map((p) => p.trim())
+        .filter((p) => p.length >= 4);
+
+      if (subparts.length > 0 && subparts.some((p) => lowerSubmission.includes(p))) {
+        return { valid: true };
+      }
     }
 
     // 4. Check for 2-word contiguous phrase matches from submission
