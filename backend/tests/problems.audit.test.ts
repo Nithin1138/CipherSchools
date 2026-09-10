@@ -3,7 +3,7 @@ import http from 'node:http';
 import app from '../src/app.js';
 import prisma from '../src/lib/prisma.js';
 
-describe('Phase 7 Four-Problem & Evaluator Audit Test Suite', () => {
+describe('Curated Problems & Evaluator Integration Test Suite', () => {
   let server: http.Server;
   let baseUrl: string;
 

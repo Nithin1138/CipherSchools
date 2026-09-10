@@ -3,7 +3,7 @@ import http from 'node:http';
 import app from '../src/app.js';
 import prisma from '../src/lib/prisma.js';
 
-describe('Phase 6 Learner Flow End-to-End API Suite', () => {
+describe('Learner Practice Flow End-to-End API Suite', () => {
   let server: http.Server;
   let baseUrl: string;
   let problemId: string;

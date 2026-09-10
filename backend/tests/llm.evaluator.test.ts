@@ -7,7 +7,7 @@ import { EvaluationService } from '../src/services/evaluation.service.js';
 import { OutputValidator, OutputValidationError } from '../src/evaluators/validator.js';
 import { EvaluationInput, CriterionSpec, EvaluationStatus, EvaluatorType } from '../src/domain/types.js';
 
-describe('LLMEvaluator & Provider Architecture Tests (Phase 5)', () => {
+describe('LLMEvaluator & Provider Architecture Tests', () => {
   let mockProvider: MockLLMProvider;
   let evaluator: LLMEvaluator;
 
