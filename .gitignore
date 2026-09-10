@@ -13,6 +13,7 @@ frontend/dist/
 .env
 .env.*
 !.env.example
+!frontend/.env.production
 
 # Operating System & IDE
 .DS_Store

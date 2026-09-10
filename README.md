@@ -1,5 +1,8 @@
 # CipherSchools — Low-Level Design (LLD) Practice Platform
 
+> 🌐 **Live Demo Platform**: [https://lowleveldesign.vercel.app](https://lowleveldesign.vercel.app/)  
+> ⚡ **Live Backend API**: [https://low-level-design.onrender.com/api](https://low-level-design.onrender.com/api) (Health Check: [`/api/health`](https://low-level-design.onrender.com/api/health))
+
 An interactive, deliberate-practice platform for mastering Low-Level Design (LLD) and Object-Oriented Design (OOD). Built for the **CipherSchools Hiring Assignment (September 2026)**.
 
 ---
