@@ -77,8 +77,8 @@ The model must respond with a strictly typed JSON shape:
   "criteria": [
     {
       "criterionId": "uuid-or-id",
-      "criterionName": "Requirements Completeness",
-      "score": 18,
+      "criterionName": "Requirement Understanding",
+      "score": 14,
       "evidence": "Candidate wrote: 'ParkingLot coordinates floors while TicketManager handles ticket issuance.'",
       "concern": "ParkingLot could become bloated if fee calculation logic is added directly.",
       "suggestion": "Extract fee calculation into an independent FeeCalculationStrategy.",
