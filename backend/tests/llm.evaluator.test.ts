@@ -492,4 +492,19 @@ interface ParkingStrategy {
     expect(() => new GeminiProvider('')).toThrow(/Gemini API key is not configured/i);
     expect(() => new GeminiProvider('your_gemini_api_key_here')).toThrow(/Gemini API key is not configured/i);
   });
+
+  // 21. GeminiProvider builds ordered fallback sequence covering all active models
+  it('21. GeminiProvider builds ordered fallback sequence covering all active models without duplicates', () => {
+    const validKey = 'AIzaSyFakeKeyForTesting12345';
+    const provider = new GeminiProvider(validKey, 'gemini-2.5-pro');
+    const sequence = provider.getModelSequence();
+
+    expect(sequence[0]).toBe('gemini-2.5-pro');
+    expect(sequence).toContain('gemini-3.6-flash');
+    expect(sequence).toContain('gemini-2.5-flash');
+    expect(sequence).toContain('gemini-3.6-pro');
+    expect(sequence).toContain('gemini-1.5-flash-8b');
+    // Ensure no duplicates
+    expect(new Set(sequence).size).toBe(sequence.length);
+  });
 });

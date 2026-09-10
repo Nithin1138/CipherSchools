@@ -9,10 +9,13 @@ const DEPRECATED_MODELS = new Set([
   'gemini-2.0-pro-exp-02-05',
 ]);
 
-const FALLBACK_CANDIDATES: Record<string, string> = {
-  'gemini-3.6-flash': 'gemini-3.6-pro',
-  'gemini-3.6-pro': 'gemini-3.6-flash',
-};
+const FALLBACK_MODEL_SEQUENCE = [
+  'gemini-3.6-flash',
+  'gemini-2.5-flash',
+  'gemini-3.6-pro',
+  'gemini-2.5-pro',
+  'gemini-1.5-flash-8b',
+];
 
 export class GeminiProvider implements LLMProvider {
   readonly name = 'gemini';
@@ -29,29 +32,63 @@ export class GeminiProvider implements LLMProvider {
     }
   }
 
-  async generateStructuredResponse(prompt: PromptPayload, options?: ProviderOptions): Promise<string> {
-    try {
-      return await this.executeModelRequest(this.modelName, prompt, options);
-    } catch (primaryErr: any) {
-      const fallbackModel = FALLBACK_CANDIDATES[this.modelName];
-      const isTransient = /high demand|overloaded|429|503|resource has been exhausted|rate limit/i.test(primaryErr.message || '');
+  /**
+   * Returns the prioritized sequence of models to try.
+   * Starts with the user's configured model, followed by all remaining active models in order.
+   */
+  getModelSequence(): string[] {
+    const sequence: string[] = [this.modelName];
+    for (const model of FALLBACK_MODEL_SEQUENCE) {
+      if (!sequence.includes(model)) {
+        sequence.push(model);
+      }
+    }
+    return sequence;
+  }
 
-      if (fallbackModel && isTransient) {
-        console.warn(
-          `[GeminiProvider] Primary model ${this.modelName} unavailable (${primaryErr.message}). Cascading to fallback model ${fallbackModel}...`
-        );
-        try {
-          return await this.executeModelRequest(fallbackModel, prompt, options);
-        } catch (fallbackErr: any) {
-          console.error(`[GeminiProvider] Fallback model ${fallbackModel} also failed: ${fallbackErr.message}`);
-          throw new Error(
-            `Gemini servers are experiencing high demand across models (${this.modelName} & ${fallbackModel}). Your design submission is saved safely. Please click 'Retry Evaluation' in a few moments.`
+  async generateStructuredResponse(prompt: PromptPayload, options?: ProviderOptions): Promise<string> {
+    const modelsToTry = this.getModelSequence();
+    const failureLog: Array<{ model: string; error: string }> = [];
+
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const currentModel = modelsToTry[i];
+      try {
+        if (i > 0) {
+          console.warn(
+            `[GeminiProvider] Primary model failed. Cascading to fallback model: ${currentModel} (${i + 1}/${modelsToTry.length})...`
           );
         }
-      }
+        const result = await this.executeModelRequest(currentModel, prompt, options);
+        if (i > 0) {
+          console.log(`[GeminiProvider] Fallback model ${currentModel} succeeded!`);
+        }
+        return result;
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        failureLog.push({ model: currentModel, error: errMsg });
+        console.warn(`[GeminiProvider] Model ${currentModel} failed: ${errMsg}`);
 
-      throw primaryErr;
+        // If this is the last model in the sequence, exit loop
+        if (i === modelsToTry.length - 1) {
+          break;
+        }
+
+        // Only cascade if error is transient, capacity-related, or model-availability-related
+        const canCascade =
+          /404|429|500|502|503|504|overloaded|high demand|resource has been exhausted|rate limit|not found|no longer available|timeout/i.test(
+            errMsg
+          );
+
+        if (!canCascade) {
+          throw err;
+        }
+      }
     }
+
+    const summary = failureLog.map((f) => `${f.model} (${f.error})`).join('; ');
+    throw new Error(
+      `All Gemini models in sequence encountered errors [${summary}]. Your submission is safely saved in PostgreSQL. Please click 'Retry Evaluation' in a few moments.`
+    );
   }
 
   private async executeModelRequest(model: string, prompt: PromptPayload, options?: ProviderOptions): Promise<string> {
