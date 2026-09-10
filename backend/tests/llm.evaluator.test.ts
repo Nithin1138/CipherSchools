@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import prisma from '../src/lib/prisma.js';
 import { LLMEvaluator } from '../src/evaluators/llm.evaluator.js';
 import { MockLLMProvider } from '../src/evaluators/providers/mock.provider.js';
+import { GeminiProvider } from '../src/evaluators/providers/gemini.provider.js';
 import { EvaluationService } from '../src/services/evaluation.service.js';
 import { OutputValidator, OutputValidationError } from '../src/evaluators/validator.js';
 import { EvaluationInput, CriterionSpec, EvaluationStatus, EvaluatorType } from '../src/domain/types.js';
@@ -463,5 +464,32 @@ interface ParkingStrategy {
     expect(() =>
       OutputValidator.validate(placeholderJson, mockCriteria, sampleInput.submission.content)
     ).toThrow(/Generic placeholder evidence is not permitted/i);
+  });
+
+  // 19. GeminiProvider model defaults and deprecated model auto-upgrade
+  it('19. GeminiProvider defaults to gemini-3.6-flash and auto-migrates deprecated models', () => {
+    const validKey = 'AIzaSyFakeKeyForTesting12345';
+    
+    // Default fallback
+    const providerDefault = new GeminiProvider(validKey);
+    expect(providerDefault.modelName).toBe('gemini-3.6-flash');
+
+    // Passing deprecated gemini-2.0-flash is auto-migrated to gemini-3.6-flash
+    const provider20 = new GeminiProvider(validKey, 'gemini-2.0-flash');
+    expect(provider20.modelName).toBe('gemini-3.6-flash');
+
+    // Passing deprecated gemini-1.5-flash is auto-migrated to gemini-3.6-flash
+    const provider15 = new GeminiProvider(validKey, 'gemini-1.5-flash');
+    expect(provider15.modelName).toBe('gemini-3.6-flash');
+
+    // Non-deprecated custom models are preserved
+    const providerPro = new GeminiProvider(validKey, 'gemini-3.6-pro');
+    expect(providerPro.modelName).toBe('gemini-3.6-pro');
+  });
+
+  // 20. GeminiProvider throws if API key is missing
+  it('20. GeminiProvider throws descriptive error if API key is missing or placeholder', () => {
+    expect(() => new GeminiProvider('')).toThrow(/Gemini API key is not configured/i);
+    expect(() => new GeminiProvider('your_gemini_api_key_here')).toThrow(/Gemini API key is not configured/i);
   });
 });

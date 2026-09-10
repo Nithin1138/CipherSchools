@@ -1,13 +1,23 @@
 import { LLMProvider, PromptPayload, ProviderOptions } from './provider.interface.js';
 
+const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
+const DEPRECATED_MODELS = new Set([
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-exp',
+  'gemini-2.0-pro-exp-02-05',
+]);
+
 export class GeminiProvider implements LLMProvider {
   readonly name = 'gemini';
   readonly modelName: string;
   private apiKey: string;
 
   constructor(apiKey?: string, modelName?: string) {
-    this.apiKey = apiKey || process.env.GEMINI_API_KEY || '';
-    this.modelName = modelName || process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    this.apiKey = (apiKey !== undefined ? apiKey : process.env.GEMINI_API_KEY) || '';
+    const candidate = (modelName !== undefined ? modelName : process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL).trim();
+    this.modelName = DEPRECATED_MODELS.has(candidate) ? DEFAULT_GEMINI_MODEL : candidate;
 
     if (!this.apiKey || this.apiKey === 'your_gemini_api_key_here') {
       throw new Error('Gemini API key is not configured. Please set GEMINI_API_KEY in backend/.env.');

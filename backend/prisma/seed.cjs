@@ -1,6 +1,6 @@
 "use strict";
 
-// backend/prisma/seed.ts
+// prisma/seed.ts
 var import_client = require("@prisma/client");
 var prisma = new import_client.PrismaClient();
 async function main() {

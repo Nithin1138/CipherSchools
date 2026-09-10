@@ -24,7 +24,7 @@ This platform bridges that gap by providing:
 
 - **Relational Integrity via PostgreSQL & Prisma**: Strictly enforces 1:1 Attempt-to-Submission and 1:1 Submission-to-Evaluation relationships via database-level `UNIQUE` constraints and foreign keys.
 - **Save-Before-Evaluate Guarantee**: Submissions are durably stored in PostgreSQL before the evaluation begins. If the evaluator fails, the submission is never lost and evaluation can be retried in-place.
-- **Vendor-Agnostic Evaluator Abstraction**: Implements an `Evaluator` domain contract supporting `GeminiProvider` (`gemini-2.0-flash`), `OpenAIProvider` (`gpt-4o-mini`), and `MockLLMProvider` (for deterministic offline testing).
+- **Vendor-Agnostic Evaluator Abstraction**: Implements an `Evaluator` domain contract supporting `GeminiProvider` (`gemini-3.6-flash`), `OpenAIProvider` (`gpt-4o-mini`), and `MockLLMProvider` (for deterministic offline testing).
 - **Zod Output Validation & Grounding Engine**: Rejects hallucinated criteria, ungrounded placeholder evidence, duplicate keys, and arithmetic errors. Deterministically computes total scores on the server.
 - **Concurrent Safe Execution**: Server-level concurrency control prevents race conditions on duplicate evaluation requests.
 
@@ -35,7 +35,7 @@ This platform bridges that gap by providing:
 - **Frontend**: React 19, TypeScript, React Router v7, Vite 8, Vitest, Testing Library, Vanilla CSS (Dark Workbench design system).
 - **Backend**: Node.js, Express 4, TypeScript, Prisma ORM, Zod, Vitest.
 - **Database**: PostgreSQL (Prisma Client).
-- **AI / Evaluation**: Google Gemini (configurable via `GEMINI_MODEL`, default: `gemini-2.0-flash`) via structured `Evaluator` abstraction; OpenAI (`gpt-4o-mini`); offline `MockLLMProvider` for deterministic testing.
+- **AI / Evaluation**: Google Gemini (configurable via `GEMINI_MODEL`, default: `gemini-3.6-flash`) via structured `Evaluator` abstraction; OpenAI (`gpt-4o-mini`); offline `MockLLMProvider` for deterministic testing.
 - **Testing**: 70 automated tests (61 backend unit/domain/api tests + 9 frontend component/flow tests).
 
 ---
@@ -85,7 +85,7 @@ LLM_PROVIDER=mock
 # For live evaluations with Google Gemini:
 # LLM_PROVIDER=gemini
 # GEMINI_API_KEY=your_gemini_api_key_here
-# GEMINI_MODEL=gemini-2.0-flash
+# GEMINI_MODEL=gemini-3.6-flash
 
 # For live evaluations with OpenAI:
 # LLM_PROVIDER=openai
@@ -150,7 +150,7 @@ Follow this step-by-step path to experience the complete practice loop:
 | `DATABASE_URL` | `backend/` | Yes | PostgreSQL connection string | `postgresql://user:pass@localhost:5432/lld_practice` |
 | `LLM_PROVIDER` | `backend/` | No | Evaluation provider (`mock`, `gemini`, `openai`) | `mock` (tests) / `gemini` (live) |
 | `GEMINI_API_KEY` | `backend/` | Conditional | Google Gemini API key (required if `LLM_PROVIDER=gemini`) | `AIzaSy...` |
-| `GEMINI_MODEL` | `backend/` | No | Gemini model identifier | `gemini-2.0-flash` |
+| `GEMINI_MODEL` | `backend/` | No | Gemini model identifier | `gemini-3.6-flash` |
 | `OPENAI_API_KEY` | `backend/` | Conditional | OpenAI API key (required if `LLM_PROVIDER=openai`) | `sk-...` |
 | `OPENAI_MODEL` | `backend/` | No | OpenAI model identifier | `gpt-4o-mini` |
 | `VITE_API_BASE_URL` | `frontend/`| No | Optional API base URL for production proxy | `/api` |
